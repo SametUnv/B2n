@@ -1,0 +1,50 @@
+BOARD2NOTES PROJESI - VERI SETLERI VE KISA ACIKLAMALARI
+======================================================
+
+1) wb_seg 2
+Link: https://universe.roboflow.com/veriseti-osc5f/wb_seg-2-jpye0
+Tip: Instance Segmentation
+Goruntu sayisi: 413
+Siniflar: Whiteboard
+Kisa aciklama:
+Bu veri seti, whiteboard alanini dogrudan segmentasyon maskesi ile ogrenmek icin en uygun temel veri setidir. 1. model olan tahta/projeksiyon alani tespiti icin ana kaynak olarak kullanilabilir. Tek sinifli yapisi sayesinde modeli dogrudan "whiteboard var/yok" yerine "whiteboard alani neresi" sorusuna odaklar.
+
+2) new Dataset
+Link: https://universe.roboflow.com/university-of-peshawar-4qet5/new-dataset-xjgtk
+Tip: Object Detection
+Goruntu sayisi: 3617
+Siniflar: Handwritten text, Whiteboard
+Kisa aciklama:
+Bu veri seti, whiteboard ve el yazisi bolgelerini kutu seviyesinde etiketledigi icin 1. model icin yardimci veri olarak degerlendirilebilir. Dogrudan segmentasyon verisi degildir; bu nedenle maskeye cevirme veya zayif gozetimli destek veri mantigi ile kullanilmasi daha uygundur. Whiteboard bulma ve yazi alanlarinin nerede oldugunu kabaca gostermesi bakimindan faydalidir.
+
+3) Metro
+Link: https://universe.roboflow.com/metro-av9w5/metro-zuqkz
+Tip: Object Detection
+Kisa aciklama:
+Bu veri seti destekleyici ek kaynak olarak kullanilabilir. Ana veri seti olarak dusunulmemelidir. Farkli arka planlar, zor sahneler veya ek dogrulama amaciyla yardimci bir veri kaynagi olarak degerlendirilebilir.
+
+4) Projeye ozel uretilecek veri seti
+Tip: Ozel / proje icin uretilecek paired ve gercek veri
+Kisa aciklama:
+Bu proje icin sadece hazir veri setleri yeterli degildir. Ekip tarafindan gercek tahta/projeksiyon fotoagraflari toplanacak ve ayrica sentetik paired veri uretilecektir.
+
+Bu veri iki amac icin kullanilacaktir:
+- 1. model icin: Gercek sinif/amfi fotograflarinda whiteboard segmentasyon kalitesini artirmak
+- 2. model icin: Bozulmus tahta goruntusu -> temiz/okunabilir tahta goruntusu eslesmesi kurmak
+
+Sentetik veri mantigi:
+- Gercek tahta arka planlari toplanir
+- Uzerine kontrollu yazi yerlestirilir
+- Ayni goruntunun temiz ve bozulmus surumleri uretilir
+- Bozulma ornekleri: blur, parlama, kontrast kaybi, perspektif bozulmasi, golge, siliklesme
+
+Bu sayede 2. model icin dogrudan denetimli egitimde kullanilabilecek paired input-target veri yapisi elde edilir.
+
+GENEL KULLANIM OZETI
+-------------------
+- 1. model (tahta tespiti / segmentasyon): wb_seg 2 + new Dataset + projeye ozel gercek whiteboard verisi
+- 2. model (enhancement / yazi belirginlestirme): hazir paired veri + projeye ozel sentetik paired veri + gercek paired fine-tune verisi
+
+NOT
+---
+Hazir veri setleri tek basina yeterli olmayacaktir. Projenin asil basarisini artiracak kisim, bizim organik olarak kendimizin topladigi ve uretecegi hedefe uygun veri seti olacaktir.

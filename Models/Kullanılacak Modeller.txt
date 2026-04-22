@@ -1,0 +1,61 @@
+BOARD2NOTES PROJESI - KULLANILACAK MODELLER VE KISA ANLATIM
+===========================================================
+
+1) MODEL 1 - WHITEBOARD / PROJEKSIYON ALANI TESPITI
+Model onerisi: MobileNetV3-Large + LR-ASPP
+Gorevi:
+Kullanicinin yukledigi sinif veya amfi fotografi icinde tahta/projeksiyon alanini bulmak ve maskesini uretmek.
+
+Neden bu model secildi?
+- Hafif ve verimli bir segmentasyon yapisidir
+- Mobil tarafa daha kolay uyarlanabilir
+- Whiteboard gibi tek sinifli segmentasyon problemlerinde uygun bir baslangic noktasi sunar
+- Kamera + mobil uygulama + yerel model entegrasyonu icin mantiklidir
+
+Bu modelin cikti:
+- Whiteboard maskesi
+- Gerekirse crop alani
+- Sonraki asama icin perspektif duzeltmeye uygun bolge
+
+2) MODEL 2 - ENHANCEMENT / YAZI BELIRGINLESTIRME MODELI
+Model onerisi: pix2pix tabanli conditional GAN
+Gorevi:
+Bulunan ve duzeltilen tahta goruntusundeki yazilari daha belirgin, daha temiz ve OCR icin daha uygun hale getirmek.
+
+Neden bu model secildi?
+- Problem tipi dogrudan image-to-image translation yapisindadir
+- Giris: bozulmus tahta goruntusu
+- Cikis: ayni goruntunun daha okunabilir surumu
+- Conditional GAN yapisi, paired veri ile bu donusumu ogrenmek icin uygundur
+- L1 loss ile icerik sadakati, adversarial loss ile daha gercekci detaylar ogrenilebilir
+
+Bu modelin egitim mantigi:
+- Ilk asamada denetimli ogrenme
+- Sonraki asamada OCR sonucuna gore takviyeli/odul tabanli iyilestirme dusunulebilir
+
+3) OCR MODULU
+Model / teknoloji onerisi:
+- Mobil tarafta ML Kit Text Recognition
+- Gerektiginde daha guclu OCR hattinda PaddleOCR veya benzeri cozumler
+
+Gorevi:
+Enhancement sonrasi tahta goruntusundeki metni metin formatina cevirmek.
+
+Neden gerekli?
+- Projenin nihai amaci sadece goruntuyu guzellestirmek degildir
+- Asil hedef kullanilabilir ders notu uretmektir
+- Bu nedenle enhancement modelinin basarisi OCR sonucundaki iyilesme ile de olculecektir
+
+4) YARDIMCI / DESTEKLEYICI BILESENLER
+- Perspektif duzeltme ve crop icin OpenCV tabanli islemler
+- Mobil tarafta tarama ve kamera akisi icin Android/Kotlin tabanli on yuz
+- Gerekirse veri etiketleme yardimi icin MobileSAM benzeri yardimci araclar
+
+MODELLERIN BIRLIKTE CALISMA AKISI
+---------------------------------
+1. Kullanici fotograf yukler veya ceker
+2. Model 1 whiteboard alanini bulur
+3. Goruntu crop edilir ve perspektif duzeltilir
+4. Model 2 yazilari daha belirgin hale getirir
+5. OCR modulu metni cikarir
+6. Sonuc duzenli not veya metin cikisi olarak kullaniciya sunulur
