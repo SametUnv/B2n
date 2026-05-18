@@ -1,0 +1,12 @@
+Veri Seti Açıklaması:
+
+Roboflow Veri Seti Sayfası: https://universe.roboflow.com/samets-workspace-4soa9/b2n_1-nktgm/dataset/1
+
+Bu veri seti, tahta bölgelerinin segmentation işlemleri için hazırlanmış etiketli görüntülerden oluşmaktadır. Görseller; board detection, OCR ön işleme ve tahta dijitalleştirme çalışmalarında kullanılmak üzere oluşturulmuştur.
+
+Veri Seti Bilgileri:
+Toplanma Yeri: Trakya Üniversitesi Mühendislik Fakültesi
+Ortamlar: Derslikler, amfiler ve yüksek lisans sınıfları
+Toplam Görüntü Sayısı: 292 adet
+Etiketleme Türü: Semantic Segmentation
+Hedef Bölge: Yazı tahtası / beyaz tahta alanları

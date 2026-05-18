@@ -1,0 +1,4 @@
+Eğittiğimiz modellere geliştirme süreci için verdiğimiz kod adları:
+
+TTM: Tahta Tespit Modeli
+YGM: Yazı Güçlendirme Modelsi
