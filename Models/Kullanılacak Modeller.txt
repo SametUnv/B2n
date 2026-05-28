@@ -1,61 +1,157 @@
-BOARD2NOTES PROJESI - KULLANILACAK MODELLER VE KISA ANLATIM
-===========================================================
+# BOARD2NOTES PROJESİ - KULLANILACAK MODELLER VE KISA ANLATIM
 
-1) MODEL 1 - WHITEBOARD / PROJEKSIYON ALANI TESPITI
-Model onerisi: MobileNetV3-Large + LR-ASPP
-Gorevi:
-Kullanicinin yukledigi sinif veya amfi fotografi icinde tahta/projeksiyon alanini bulmak ve maskesini uretmek.
+1. MODEL 1 - WHITEBOARD / PROJEKSİYON ALANI TESPİTİ
 
-Neden bu model secildi?
-- Hafif ve verimli bir segmentasyon yapisidir
-- Mobil tarafa daha kolay uyarlanabilir
-- Whiteboard gibi tek sinifli segmentasyon problemlerinde uygun bir baslangic noktasi sunar
-- Kamera + mobil uygulama + yerel model entegrasyonu icin mantiklidir
+Model önerisi:
+MobileNetV3-Large + LR-ASPP veya benzeri hafif segmentasyon tabanlı bir model
 
-Bu modelin cikti:
-- Whiteboard maskesi
-- Gerekirse crop alani
-- Sonraki asama icin perspektif duzeltmeye uygun bolge
+Görevi:
+Kullanıcının yüklediği sınıf, amfi veya ders ortamı fotoğrafı içerisindeki tahta/projeksiyon alanını tespit etmek, bu alanın maskesini üretmek ve sonraki aşamalar için tahta bölgesini ayrıştırmaktır.
 
-2) MODEL 2 - ENHANCEMENT / YAZI BELIRGINLESTIRME MODELI
-Model onerisi: pix2pix tabanli conditional GAN
-Gorevi:
-Bulunan ve duzeltilen tahta goruntusundeki yazilari daha belirgin, daha temiz ve OCR icin daha uygun hale getirmek.
+Bu modelin amacı:
+Sisteme gelen görüntü çoğu zaman yalnızca tahta görüntüsünden oluşmaz. Fotoğraf içinde duvar, sıra, öğrenci, perde, projeksiyon alanı veya çevresel nesneler bulunabilir. Bu nedenle ilk aşamada tahta/projeksiyon bölgesinin doğru şekilde bulunması gerekir. Model 1, bu alanı tespit ederek sistemin yalnızca ilgili bölge üzerinde çalışmasını sağlar.
 
-Neden bu model secildi?
-- Problem tipi dogrudan image-to-image translation yapisindadir
-- Giris: bozulmus tahta goruntusu
-- Cikis: ayni goruntunun daha okunabilir surumu
-- Conditional GAN yapisi, paired veri ile bu donusumu ogrenmek icin uygundur
-- L1 loss ile icerik sadakati, adversarial loss ile daha gercekci detaylar ogrenilebilir
+Neden bu model yapısı uygundur?
 
-Bu modelin egitim mantigi:
-- Ilk asamada denetimli ogrenme
-- Sonraki asamada OCR sonucuna gore takviyeli/odul tabanli iyilestirme dusunulebilir
+* Hafif ve mobil uyumlu bir segmentasyon yaklaşımıdır.
+* Tek sınıflı tahta/projeksiyon alanı tespiti için verimli bir başlangıç sunar.
+* Mobil uygulama içinde çalıştırılmaya daha uygundur.
+* Sonraki modellerin gereksiz arka planla uğraşmasını engeller.
+* Perspektif düzeltme ve crop işlemleri için gerekli bölgeyi sağlar.
 
-3) OCR MODULU
-Model / teknoloji onerisi:
-- Mobil tarafta ML Kit Text Recognition
-- Gerektiginde daha guclu OCR hattinda PaddleOCR veya benzeri cozumler
+Bu modelin çıktıları:
 
-Gorevi:
-Enhancement sonrasi tahta goruntusundeki metni metin formatina cevirmek.
+* Tahta/projeksiyon alanı maskesi
+* Tahta bölgesinin kırpılmış görüntüsü
+* Perspektif düzeltmeye uygun bölge koordinatları
+* Model 2’ye aktarılacak temizlenmiş tahta alanı
 
-Neden gerekli?
-- Projenin nihai amaci sadece goruntuyu guzellestirmek degildir
-- Asil hedef kullanilabilir ders notu uretmektir
-- Bu nedenle enhancement modelinin basarisi OCR sonucundaki iyilesme ile de olculecektir
+2. MODEL 2 - TAHTA GÖRÜNTÜ İYİLEŞTİRME, YAZI BELİRGİNLEŞTİRME VE YAZI MASKESİ ÜRETİM MODELİ
 
-4) YARDIMCI / DESTEKLEYICI BILESENLER
-- Perspektif duzeltme ve crop icin OpenCV tabanli islemler
-- Mobil tarafta tarama ve kamera akisi icin Android/Kotlin tabanli on yuz
-- Gerekirse veri etiketleme yardimi icin MobileSAM benzeri yardimci araclar
+Geliştirilen model:
+NAFNet-Base tabanlı Multi-Head Enhancement modeli
 
-MODELLERIN BIRLIKTE CALISMA AKISI
----------------------------------
-1. Kullanici fotograf yukler veya ceker
-2. Model 1 whiteboard alanini bulur
-3. Goruntu crop edilir ve perspektif duzeltilir
-4. Model 2 yazilari daha belirgin hale getirir
-5. OCR modulu metni cikarir
-6. Sonuc duzenli not veya metin cikisi olarak kullaniciya sunulur
+Görevi:
+Model 1 tarafından bulunan veya kırpılan tahta görüntüsünü iyileştirmek, gölge/parlama/ışık dengesizliği/blur gibi bozulmaları azaltmak, yazıları OCR’ye daha uygun hale getirmek ve aynı zamanda yazı bölgelerine ait maske üretmektir.
+
+Bu modelin temel amacı:
+Board2Notes projesinde asıl kritik aşama yalnızca tahtayı bulmak değildir. Tahta bulunduktan sonra görüntünün okunabilir hale getirilmesi gerekir. Sınıf ortamında çekilen tahta fotoğraflarında gölge, yansıma, düşük kontrast, silinmiş yazı izleri, bulanıklık ve ışık dengesizliği gibi sorunlar bulunabilir. Model 2, bu sorunları azaltarak hem insan gözüyle daha okunabilir hem de OCR sistemleri için daha uygun bir çıktı üretmeyi hedefler.
+
+Model 2’nin çok başlı yapısı:
+Geliştirilen model tek bir çıktı üretmek yerine birden fazla görevi aynı anda öğrenen çok başlı bir mimariye sahiptir.
+
+Modelin çıktıları:
+
+1. Restored Output:
+   Gölge, parlama, blur ve ışık bozulmaları azaltılmış daha temiz tahta görüntüsü.
+
+2. OCR Output:
+   Yazıların daha belirgin ve OCR sistemleri için daha okunabilir hale getirildiği çıktı.
+
+3. Text Mask Output:
+   Tahta üzerindeki yazı bölgelerini gösteren maske çıktısı.
+
+Bu yapı sayesinde model yalnızca görüntüyü temizlemekle kalmaz; aynı zamanda yazıların nerede olduğunu da öğrenir. Bu durum projenin ikinci kullanım modu için önemlidir. Çünkü ilerleyen aşamada tahtadaki yazılar maske yardımıyla ayrıştırılarak boş bir not sayfasına aktarılabilir.
+
+Neden NAFNet-Base seçildi?
+
+* Görüntü restorasyonu problemlerinde güçlü ve verimli bir mimaridir.
+* Gölge kaldırma, bulanıklık azaltma, düşük kontrast düzeltme ve genel görüntü iyileştirme görevleri için uygundur.
+* GAN tabanlı modellere göre daha stabil eğitim sağlar.
+* Yazı gibi ince detayların korunması gereken problemlerde kontrollü sonuçlar üretir.
+* Çok başlı yapıya uyarlanarak restoration, OCR enhancement ve text mask görevlerini aynı anda öğrenebilir.
+* Mobil tarafa aktarım için daha kontrollü ve optimize edilebilir bir yapı sunar.
+
+Eğitim yaklaşımı:
+Model 2 için sentetik olarak oluşturulmuş paired veri seti kullanılmıştır. Boş tahta görüntüleri üzerine el yazısı verileri bindirilmiş, ardından bu görüntülere gölge, parlama, blur, ışık dengesizliği, renk kayması ve JPEG/noise bozulmaları eklenmiştir. Böylece modelin girdisi bozulmuş tahta görüntüsü, hedefi ise daha temiz ve okunabilir tahta görüntüsü olacak şekilde eğitim seti hazırlanmıştır.
+
+Eğitim iki temel aşamada gerçekleştirilmiştir:
+
+Aşama 1 - Supervised Restoration Eğitimi:
+Bu aşamada model, bozulmuş tahta görüntüsünden temizlenmiş tahta görüntüsünü, OCR’ye uygun çıktıyı ve yazı maskesini öğrenmiştir. Bu aşama modelin temel gölge temizleme, yazı koruma ve maske üretme davranışını kazandığı ana aşamadır.
+
+Aşama 2 - OCR / Stroke Fine-Tuning:
+Bu aşamada model, yazıların daha belirgin hale getirilmesi ve OCR’ye daha uygun çıktı üretmesi için ince ayara tabi tutulmuştur. Bu aşama özellikle yazı okunabilirliği ve yazı maskesi kalitesini koruma açısından önemlidir.
+
+Eğitim sonucunda:
+Model, sentetik test setinde gölge ve görüntü bozulmalarını azaltabilen, yazıları büyük oranda koruyabilen ve yazı bölgelerine ait maske üretebilen başarılı bir prototip haline gelmiştir. Test sonuçlarında restoration, OCR çıktısı ve text mask üretimi birlikte değerlendirilmiştir. Final test sonucunda modelin text mask üretiminde anlamlı bir başarı elde ettiği ve genel score değerinin iyileştiği görülmüştür.
+
+Özetle Model 2:
+
+* Tahta görüntüsünü temizler.
+* Yazıları korur ve belirginleştirir.
+* OCR için daha uygun görüntü üretir.
+* Yazı maskesi çıkarır.
+* İleride yazıları boş sayfaya aktarma moduna temel oluşturur.
+
+3. OCR MODÜLÜ
+
+Model / teknoloji önerisi:
+
+* Mobil tarafta ML Kit Text Recognition
+* Daha güçlü sunucu veya araştırma hattı için PaddleOCR, EasyOCR veya benzeri OCR sistemleri
+* İleride el yazısı için özel olarak eğitilmiş handwriting OCR modelleri
+
+Görevi:
+Model 2 tarafından iyileştirilen tahta görüntüsündeki yazıları metin formatına dönüştürmektir.
+
+Neden gereklidir?
+Board2Notes projesinin nihai amacı yalnızca tahta fotoğrafını güzelleştirmek değildir. Asıl amaç, tahtadaki ders içeriğini kullanılabilir dijital nota dönüştürmektir. Bu nedenle OCR modülü, görüntüden metin üretme aşamasını gerçekleştirir.
+
+OCR modülünün sistemdeki yeri:
+
+1. Kullanıcı fotoğraf yükler.
+2. Tahta alanı tespit edilir.
+3. Tahta görüntüsü Model 2 ile iyileştirilir.
+4. OCR modülü iyileştirilmiş görüntüden metin çıkarır.
+5. Çıkan metin not haline getirilir.
+
+OCR başarımı, Model 2’nin kalitesini değerlendirmek için de kullanılabilir. Eğer Model 2 sonrasında OCR çıktısı daha doğru hale geliyorsa, enhancement modelinin görevini başarılı yaptığı kabul edilebilir.
+
+4. NOT ÜRETME / METİN DÜZENLEME MODÜLÜ
+
+Model / teknoloji önerisi:
+Groq API, yerel LLM veya uygun bir dil modeli
+
+Görevi:
+OCR sonucunda elde edilen ham metni daha düzenli, okunabilir ve ders notu formatına uygun hale getirmektir.
+
+Neden gereklidir?
+OCR çıktısı genellikle ham, düzensiz ve hatalar içeren bir metindir. Bu metnin doğrudan kullanıcıya verilmesi yerine başlıklandırılmış, maddelendirilmiş ve daha anlaşılır ders notuna dönüştürülmesi gerekir.
+
+Bu modülün çıktıları:
+
+* Düzenlenmiş ders notu
+* Başlıklandırılmış içerik
+* Maddelendirilmiş özet
+* Gerekirse formül, tanım ve önemli noktaların ayrıştırılması
+
+5. YARDIMCI / DESTEKLEYİCİ BİLEŞENLER
+
+Perspektif düzeltme:
+Model 1’in bulduğu tahta alanı kullanılarak OpenCV ile perspektif düzeltme uygulanabilir. Böylece eğik çekilen tahta görüntüleri daha düz ve işlenebilir hale getirilir.
+
+Crop işlemi:
+Tahta alanı tespit edildikten sonra görüntünün yalnızca ilgili bölgesi kırpılır. Bu, Model 2’nin gereksiz arka plan bilgisiyle uğraşmasını engeller.
+
+Sentetik veri üretimi:
+Boş tahta görüntüleri üzerine el yazısı verileri bindirilerek paired eğitim seti oluşturulur. Daha sonra gölge, parlama, blur, düşük kontrast, ışık bozulması ve gürültü gibi sentetik bozulmalar eklenir. Bu yöntem, gerçek veri az olduğunda model eğitimi için güçlü bir veri üretim yaklaşımı sağlar.
+
+Mobil uygulama:
+Android/Kotlin tabanlı mobil uygulama üzerinden kullanıcı fotoğraf çekebilir veya galeriden görüntü yükleyebilir. Model çıktıları uygulama içinde temizlenmiş görüntü, OCR sonucu ve düzenlenmiş not olarak sunulabilir.
+
+Genel sistem akışı:
+
+1. Kullanıcı sınıf veya tahta fotoğrafı yükler.
+2. Model 1 tahta/projeksiyon alanını tespit eder.
+3. OpenCV ile crop ve perspektif düzeltme uygulanır.
+4. Model 2 görüntüyü temizler, yazıları belirginleştirir ve yazı maskesi üretir.
+5. OCR modülü yazıları metne dönüştürür.
+6. Dil modeli OCR çıktısını düzenli ders notuna çevirir.
+7. Kullanıcı temiz görüntü, OCR metni ve düzenlenmiş not çıktısına ulaşır.
+
+SONUÇ
+
+Board2Notes projesinde geliştirilen temel yapı, tahta görüntüsünü önce tespit eden, ardından iyileştiren ve sonrasında OCR ile dijital nota dönüştüren çok aşamalı bir yapıdır. Bu çalışmada özellikle ikinci model olan NAFNet-Base Multi-Head Enhancement modeli geliştirilmiş ve test edilmiştir. Model 2, gölge/parlama/blur gibi görüntü bozulmalarını azaltma, yazıları koruma, OCR’ye uygun çıktı üretme ve yazı maskesi çıkarma görevlerini aynı anda öğrenen çok başlı bir yapı olarak tasarlanmıştır.
+
+Bu yapı sayesinde proje yalnızca bir OCR uygulaması olmaktan çıkarak, tahta görüntüsünü OCR’ye hazırlayan ve ders notu üretim sürecini destekleyen bütünleşik bir yapay zekâ sistemine dönüşmektedir.

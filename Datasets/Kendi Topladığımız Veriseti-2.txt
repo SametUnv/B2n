@@ -1,0 +1,10 @@
+Veri Seti Açıklaması:
+Roboflow Veri Seti Sayfası: https://app.roboflow.com/samets-workspace-4soa9/b2n_2/2
+
+Bu veri seti; board detection (tahta tespiti), OCR ön işleme ve tahta dijitalleştirme çalışmalarında 2. olacak olan yazı çıkarımı yapacak modelimiz için geliştirilmiş, Instance Segmentation (Nesne Bölütleme) tabanlı etiketli görüntülerden oluşmaktadır. İlk versiyondan (b2n_1) farklı olarak bu veri seti, hem nesnelerin tekil olarak ayırt edilmesini sağlamakta hem 2. modele uygun şekilde sentetik veri seti oluşturmak amacıyla negatif/boş tahta örnekleri içermektedir.
+
+Veri Seti Bilgileri:
+Toplanma Yeri: Trakya Üniversitesi Mühendislik Fakültesi
+Ortamlar: Derslikler, amfiler ve yüksek lisans sınıfları
+Etiketleme Türü: Instance Segmentation (Nesne Bölütleme)
+Hedef Bölge: Yazı tahtası / beyaz tahta alanları (Her bir tahta bağımsız birer nesne olarak etiketlenmiştir).
