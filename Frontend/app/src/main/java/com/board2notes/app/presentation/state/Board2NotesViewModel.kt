@@ -247,6 +247,39 @@ class Board2NotesViewModel(
         }
     }
 
+    fun skipToNoteEditor() {
+        val note = FormattedNote(
+            title = "Yeni Not",
+            body = "",
+            courseName = "",
+            createdAtEpochMs = System.currentTimeMillis()
+        )
+        viewModelScope.launch {
+            runCatching {
+                container.noteRepository.createFromPipeline(
+                    note = note,
+                    ocrResult = com.board2notes.app.domain.model.OcrResult(
+                        rawText = "", lines = emptyList(), words = emptyList(),
+                        confidence = null, elapsedMs = 0
+                    ),
+                    cropBitmap = _uiState.value.boardDetection?.cropBitmap,
+                    ocrBitmap = null,
+                    whitePageBitmap = null
+                )
+            }.onSuccess { saved ->
+                _uiState.value = _uiState.value.copy(
+                    note = note,
+                    activeSavedNoteId = saved.id,
+                    selectedSavedNote = saved,
+                    savedNotes = loadNotesSafely(),
+                    isBusy = false
+                )
+            }.onFailure { error ->
+                fail("Not olusturulamadi: ${error.message}", error)
+            }
+        }
+    }
+
     fun updateNote(title: String, body: String, courseName: String) {
         val current = _uiState.value.note ?: return
         _uiState.value = _uiState.value.copy(
@@ -254,7 +287,7 @@ class Board2NotesViewModel(
         )
     }
 
-    fun saveCurrentNote() {
+    fun saveCurrentNote(onSaved: (() -> Unit)? = null) {
         val note = _uiState.value.note ?: return
         val id = _uiState.value.activeSavedNoteId ?: return
         viewModelScope.launch {
@@ -271,6 +304,7 @@ class Board2NotesViewModel(
                     savedNotes = loadNotesSafely(),
                     userMessage = "Not kaydedildi."
                 )
+                onSaved?.invoke()
             }.onFailure { error ->
                 fail("Not kaydedilemedi: ${error.message}", error)
             }
@@ -355,6 +389,10 @@ class Board2NotesViewModel(
 
     fun setGroqApiKey(value: String) {
         viewModelScope.launch { container.settingsRepository.setGroqApiKey(value) }
+    }
+
+    fun showMessage(message: String) {
+        _uiState.value = _uiState.value.copy(userMessage = message)
     }
 
     fun clearMessage() {
