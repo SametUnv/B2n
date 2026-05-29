@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.B2Note" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">#F7F8FA</item>
+        <item name="android:statusBarColor">#F7F8FA</item>
+    </style>
+
+    <style name="Theme.B2Note.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#F7F8FA</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.B2Note</item>
+    </style>
+
+    <style name="Theme.Board2Notes" parent="@style/Theme.B2Note" />
+</resources>
