@@ -53,6 +53,7 @@ import com.board2notes.app.core.ui.theme.Primary
 import com.board2notes.app.core.ui.theme.Secondary
 import com.board2notes.app.core.util.ImageFileProvider
 import com.board2notes.app.presentation.shared.BoardViewModel
+import com.board2notes.app.core.util.TakePictureWithGrants
 
 @Composable
 fun HomeScreen(
@@ -76,7 +77,7 @@ fun HomeScreen(
 
     // Camera capture
     val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
+        contract = TakePictureWithGrants()
     ) { success: Boolean ->
         val uri = pendingCameraUri
         if (success && uri != null) {

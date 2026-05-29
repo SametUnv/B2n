@@ -3,4 +3,9 @@
         <item name="android:statusBarColor">@color/board_background</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
     </style>
+
+    <!-- Sadece image cropper aktivitesi tarafından kullanılan AppCompat tabanlı tema. -->
+    <style name="Theme.Board2Notes.Cropper" parent="Theme.AppCompat.Light.DarkActionBar">
+        <item name="colorPrimary">@color/board_primary</item>
+    </style>
 </resources>

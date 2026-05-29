@@ -1,5 +1,7 @@
 package com.board2notes.app.presentation.preview
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,17 +22,26 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.board2notes.app.core.ui.components.AppScaffold
 import com.board2notes.app.core.ui.components.PrimaryButton
 import com.board2notes.app.core.ui.components.SecondaryButton
+import com.board2notes.app.core.util.ImageEditUtil
 import com.board2notes.app.presentation.shared.BoardViewModel
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun PreviewScreen(
@@ -40,6 +51,15 @@ fun PreviewScreen(
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Crop launcher — opens the cropper UI and updates the VM with the result.
+    val cropLauncher = rememberLauncherForActivityResult(CropImageContract()) { result ->
+        if (result.isSuccessful) {
+            result.uriContent?.let { viewModel.onImageSelected(it.toString()) }
+        }
+    }
 
     AppScaffold(title = "Önizleme", onBack = onBack) {
         Column(
@@ -74,10 +94,18 @@ fun PreviewScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // Rotate / crop placeholders (UI only for the prototype)
+            // Rotate / Crop — now actually functional.
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 AssistChip(
-                    onClick = { /* TODO: rotate when editing is implemented */ },
+                    onClick = {
+                        val uriString = state.selectedImageUri ?: return@AssistChip
+                        scope.launch {
+                            val rotated = withContext(Dispatchers.IO) {
+                                ImageEditUtil.rotate(context, Uri.parse(uriString), 90f)
+                            }
+                            rotated?.let { viewModel.onImageSelected(it.toString()) }
+                        }
+                    },
                     label = { Text("Döndür") },
                     leadingIcon = {
                         Icon(Icons.Default.Rotate90DegreesCcw, contentDescription = null)
@@ -85,7 +113,20 @@ fun PreviewScreen(
                     colors = AssistChipDefaults.assistChipColors()
                 )
                 AssistChip(
-                    onClick = { /* TODO: crop when editing is implemented */ },
+                    onClick = {
+                        val uriString = state.selectedImageUri ?: return@AssistChip
+                        cropLauncher.launch(
+                            CropImageContractOptions(
+                                uri = Uri.parse(uriString),
+                                cropImageOptions = CropImageOptions(
+                                    guidelines = com.canhub.cropper.CropImageView.Guidelines.ON,
+                                    fixAspectRatio = false,
+                                    outputCompressFormat = android.graphics.Bitmap.CompressFormat.JPEG,
+                                    outputCompressQuality = 92
+                                )
+                            )
+                        )
+                    },
                     label = { Text("Kırp") },
                     leadingIcon = { Icon(Icons.Default.Crop, contentDescription = null) }
                 )
