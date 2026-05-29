@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- board -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,33 h48 a4,4 0 0 1 4,4 v34 a4,4 0 0 1 -4,4 h-48 a4,4 0 0 1 -4,-4 v-34 a4,4 0 0 1 4,-4 z" />
+    <!-- inner area -->
+    <path
+        android:fillColor="#2563EB"
+        android:pathData="M33,40 h42 v24 h-42 z" />
+    <!-- note lines -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M37,45 h34 v3 h-34 z M37,52 h34 v3 h-34 z M37,59 h22 v3 h-22 z" />
+</vector>
