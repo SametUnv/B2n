@@ -10,11 +10,18 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,13 +44,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Rotate90DegreesCcw
@@ -54,12 +66,11 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -71,10 +82,12 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -83,6 +96,8 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,14 +107,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
@@ -127,6 +144,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -177,7 +195,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
             pendingCameraUri = uri
             cameraLauncher.launch(uri)
         } else {
-            viewModel.showMessage("Kamera izni olmadan fotograf cekilemez.")
+            viewModel.showMessage("Kamera izni olmadan fotoğraf çekilemez.")
         }
     }
 
@@ -194,18 +212,28 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
     val topLevel = route in setOf(Route.Home, Route.Notes, Route.Settings)
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    shape = RoundedCornerShape(16.dp),
+                    containerColor = Color(0xFF0F172A),
+                    contentColor = Color.White,
+                    actionColor = Color(0xFF2563EB),
+                    actionContentColor = Color(0xFF2563EB),
+                    dismissActionContentColor = Color.White
+                )
+            }
+        },
         topBar = {
-            CenterAlignedTopAppBar(
+            TopAppBar(
                 title = {
-                    val folderCourse = if (route == "${Route.Folder}/{course}") {
-                        backStackEntry?.arguments?.getString("course")?.let { Uri.decode(it) }.orEmpty()
-                    } else null
-                    when {
-                        route == Route.Home -> B2NoteLogo(compact = true)
-                        folderCourse != null -> Text(folderCourse.ifBlank { "Klasör" }, fontWeight = FontWeight.SemiBold)
-                        else -> Text(titleForRoute(route), fontWeight = FontWeight.SemiBold)
-                    }
+                    Text(
+                        titleForRoute(route),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
                 },
                 navigationIcon = {
                     if (!topLevel) {
@@ -220,12 +248,18 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                             Icon(Icons.Default.BugReport, contentDescription = "Debug")
                         }
                     }
-                    if (route != Route.About) {
+                    if (topLevel) {
                         IconButton(onClick = { navController.navigate(Route.About) }) {
-                            Icon(Icons.Default.Info, contentDescription = "Hakkinda")
+                            Icon(Icons.Default.Info, contentDescription = "Hakkında")
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
         },
         bottomBar = {
@@ -238,9 +272,27 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .then(
+                    if (topLevel) {
+                        Modifier.topLevelSwipeNavigation(
+                            route = route,
+                            navController = navController,
+                            viewModel = viewModel
+                        )
+                    } else {
+                        Modifier
+                    }
+                )
         ) {
             if (state.isBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            NavHost(navController = navController, startDestination = Route.Home) {
+            NavHost(
+                navController = navController,
+                startDestination = Route.Home,
+                enterTransition = { topLevelEnterTransition(initialState.destination.route, targetState.destination.route) },
+                exitTransition = { topLevelExitTransition(initialState.destination.route, targetState.destination.route) },
+                popEnterTransition = { topLevelEnterTransition(initialState.destination.route, targetState.destination.route) },
+                popExitTransition = { topLevelExitTransition(initialState.destination.route, targetState.destination.route) }
+            ) {
                 composable(Route.Home) {
                     HomeScreen(
                         state = state,
@@ -337,6 +389,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     LaunchedEffect(Unit) { viewModel.refreshNotes() }
                     FolderScreen(
                         state = state,
+                        viewModel = viewModel,
                         courseName = course,
                         onOpen = { note ->
                             viewModel.openSavedNote(note.id)
@@ -377,110 +430,601 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
 @Composable
 private fun B2NoteBottomBar(route: String?, navController: NavHostController, viewModel: Board2NotesViewModel) {
-    NavigationBar {
-        NavigationBarItem(
-            selected = route == Route.Home,
-            onClick = {
-                viewModel.goHome()
-                navController.navigate(Route.Home)
-            },
-            icon = { Icon(Icons.Default.Home, contentDescription = null) },
-            label = { Text("Ana Sayfa") }
-        )
-        NavigationBarItem(
-            selected = route == Route.Notes,
-            onClick = {
-                viewModel.refreshNotes()
-                navController.navigate(Route.Notes)
-            },
-            icon = { Icon(Icons.Default.Folder, contentDescription = null) },
-            label = { Text("Notlarim") }
-        )
-        NavigationBarItem(
-            selected = route == Route.Settings,
-            onClick = { navController.navigate(Route.Settings) },
-            icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-            label = { Text("Ayarlar") }
-        )
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        NavigationBar(
+            containerColor = MaterialTheme.colorScheme.surface,
+            tonalElevation = 0.dp
+        ) {
+            NavigationBarItem(
+                selected = route == Route.Home,
+                onClick = { navigateTopLevel(Route.Home, navController, viewModel) },
+                icon = { Icon(Icons.Default.Home, contentDescription = null) },
+                label = { Text("Ana Sayfa", fontWeight = if (route == Route.Home) FontWeight.SemiBold else FontWeight.Normal) },
+                colors = b2NoteNavigationItemColors()
+            )
+            NavigationBarItem(
+                selected = route == Route.Notes,
+                onClick = { navigateTopLevel(Route.Notes, navController, viewModel) },
+                icon = { Icon(Icons.Default.Folder, contentDescription = null) },
+                label = { Text("Notlarım", fontWeight = if (route == Route.Notes) FontWeight.SemiBold else FontWeight.Normal) },
+                colors = b2NoteNavigationItemColors()
+            )
+            NavigationBarItem(
+                selected = route == Route.Settings,
+                onClick = { navigateTopLevel(Route.Settings, navController, viewModel) },
+                icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                label = { Text("Ayarlar", fontWeight = if (route == Route.Settings) FontWeight.SemiBold else FontWeight.Normal) },
+                colors = b2NoteNavigationItemColors()
+            )
+        }
     }
+}
+
+@Composable
+private fun b2NoteNavigationItemColors() = NavigationBarItemDefaults.colors(
+    selectedIconColor = MaterialTheme.colorScheme.primary,
+    selectedTextColor = MaterialTheme.colorScheme.primary,
+    indicatorColor = Color(0xFFEFF6FF),
+    unselectedIconColor = Color(0xFF64748B),
+    unselectedTextColor = Color(0xFF64748B)
+)
+
+private fun navigateTopLevel(route: String, navController: NavHostController, viewModel: Board2NotesViewModel) {
+    when (route) {
+        Route.Home -> viewModel.goHome()
+        Route.Notes -> viewModel.refreshNotes()
+    }
+    navController.navigate(route) {
+        popUpTo(Route.Home) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+private fun Modifier.topLevelSwipeNavigation(
+    route: String?,
+    navController: NavHostController,
+    viewModel: Board2NotesViewModel
+): Modifier = pointerInput(route) {
+    var totalDrag = 0f
+    detectHorizontalDragGestures(
+        onDragStart = { totalDrag = 0f },
+        onHorizontalDrag = { _, dragAmount -> totalDrag += dragAmount },
+        onDragEnd = {
+            if (abs(totalDrag) < 92f) return@detectHorizontalDragGestures
+            val targetRoute = if (totalDrag < 0f) nextTopLevelRoute(route) else previousTopLevelRoute(route)
+            navigateTopLevel(targetRoute, navController, viewModel)
+        }
+    )
+}
+
+private fun nextTopLevelRoute(route: String?): String = when (route) {
+    Route.Home -> Route.Notes
+    Route.Notes -> Route.Settings
+    Route.Settings -> Route.Home
+    else -> Route.Home
+}
+
+private fun previousTopLevelRoute(route: String?): String = when (route) {
+    Route.Home -> Route.Settings
+    Route.Notes -> Route.Home
+    Route.Settings -> Route.Notes
+    else -> Route.Home
+}
+
+private fun AnimatedContentTransitionScope<*>.topLevelEnterTransition(fromRoute: String?, toRoute: String?): EnterTransition {
+    val direction = if (nextTopLevelRoute(fromRoute) == toRoute) {
+        AnimatedContentTransitionScope.SlideDirection.Left
+    } else {
+        AnimatedContentTransitionScope.SlideDirection.Right
+    }
+    return slideIntoContainer(direction, animationSpec = tween(260)) + fadeIn(tween(180))
+}
+
+private fun AnimatedContentTransitionScope<*>.topLevelExitTransition(fromRoute: String?, toRoute: String?): ExitTransition {
+    val direction = if (nextTopLevelRoute(fromRoute) == toRoute) {
+        AnimatedContentTransitionScope.SlideDirection.Left
+    } else {
+        AnimatedContentTransitionScope.SlideDirection.Right
+    }
+    return slideOutOfContainer(direction, animationSpec = tween(260)) + fadeOut(tween(180))
 }
 
 @Composable
 private fun HomeScreen(state: Board2NotesUiState, onStart: () -> Unit, onOpenNote: (SavedNote) -> Unit) {
     ScreenColumn {
-        Spacer(Modifier.height(18.dp))
-        B2NoteLogo(compact = false)
-        Spacer(Modifier.height(18.dp))
-        SectionTitle(
-            title = "Tahtadan temiz ders notuna",
-            subtitle = "Fotoğraf çek, tahta alanını düzelt, yazıyı belirginleştir ve notlarını kalıcı olarak sakla."
-        )
-        Spacer(Modifier.height(18.dp))
-        Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.CameraAlt, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Yeni tahta notu oluştur")
-        }
-        Spacer(Modifier.height(18.dp))
-        PipelineSummary()
-        Spacer(Modifier.height(20.dp))
-        SectionTitle("Son notlar", "En son kaydedilen ders notların.")
         Spacer(Modifier.height(10.dp))
+        HomeWelcomeCard()
+        Spacer(Modifier.height(18.dp))
+        HomePrimaryActionCard(onClick = onStart)
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "Son Notlar",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(Modifier.height(12.dp))
         if (state.savedNotes.isEmpty()) {
-            EmptyState("Henüz kayıtlı not yok.", "İlk tahta fotoğrafını işleyerek B2Note arşivini oluştur.")
+            HomeEmptyNotesCard()
         } else {
-            state.savedNotes.take(3).forEach { note ->
-                SavedNoteRow(note = note, onClick = { onOpenNote(note) })
-                Spacer(Modifier.height(10.dp))
+            HomeRecentNotesCard {
+                state.savedNotes.take(3).forEachIndexed { index, note ->
+                    HomeRecentNoteRow(note = note, onClick = { onOpenNote(note) })
+                    if (index != state.savedNotes.take(3).lastIndex) {
+                        Spacer(Modifier.height(10.dp))
+                    }
+                }
             }
+        }
+        Spacer(Modifier.height(22.dp))
+    }
+}
+
+@Composable
+private fun HomeWelcomeCard() {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(10.dp, RoundedCornerShape(20.dp), ambientColor = Color(0x142563EB), spotColor = Color(0x1A0F172A)),
+        shape = RoundedCornerShape(20.dp),
+        color = Color.Transparent
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF0F172A), Color(0xFF1D4ED8), Color(0xFF2563EB))
+                    )
+                )
+                .padding(20.dp)
+        ) {
+            Column {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.White.copy(alpha = 0.14f)
+                ) {
+                    Text(
+                        "AI destekli üretkenlik",
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Tahta fotoğraflarınızı akıllı notlara dönüştürün.",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Ders içeriklerini yakalayın, düzenleyin ve not arşivinize kaydedin.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.78f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomePrimaryActionCard(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(188.dp)
+            .shadow(16.dp, RoundedCornerShape(24.dp), ambientColor = Color(0x242563EB), spotColor = Color(0x302563EB))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(24.dp),
+        color = Color.Transparent
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF2563EB), Color(0xFF1D4ED8), Color(0xFF0F172A))
+                    )
+                )
+                .padding(22.dp)
+        ) {
+            Column(
+                modifier = Modifier.align(Alignment.CenterStart),
+                verticalArrangement = Arrangement.Center
+            ) {
+                Surface(
+                    modifier = Modifier.size(54.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color.White.copy(alpha = 0.16f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Yeni Tahta Notu Oluştur",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Kamera veya galeriden başlayın",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.78f)
+                )
+            }
+            Icon(
+                Icons.Default.Description,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.14f),
+                modifier = Modifier
+                    .size(104.dp)
+                    .align(Alignment.BottomEnd)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HomeRecentNotesCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(Modifier.padding(12.dp), content = content)
+    }
+}
+
+@Composable
+private fun HomeRecentNoteRow(note: SavedNote, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFFFFFFFF)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    note.title.ifBlank { "Başlıksız not" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    formatDate(note.createdAtEpochMs),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    note.preview.ifBlank { "Önizleme bulunmuyor." },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Description,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeEmptyNotesCard() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                modifier = Modifier.size(58.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.Description,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Henüz not oluşturulmadı",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "İlk tahta notunuzu oluşturarak başlayın.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
 
 @Composable
 private fun CaptureScreen(onPick: () -> Unit, onCamera: () -> Unit) {
-    ScreenColumn {
-        Spacer(Modifier.height(16.dp))
-        PipelineStepper(current = 0)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 18.dp)
+    ) {
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "Tahta yakala",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Tahtayı kadraja alın; köşeler görünür olduğunda en iyi sonuç alınır.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(20.dp))
+        CapturePreviewCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        )
         Spacer(Modifier.height(18.dp))
-        SectionTitle("Görüntü kaynağı", "Tahta veya projeksiyon görüntüsünü kamera ya da galeriden al.")
-        Spacer(Modifier.height(18.dp))
-        Button(onClick = onCamera, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.CameraAlt, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Kamera ile çek")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FilledTonalButton(
+                onClick = onPick,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurface
+                )
+            ) {
+                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Galeri")
+            }
+            Spacer(Modifier.width(18.dp))
+            Button(
+                onClick = onCamera,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(58.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Çek", fontWeight = FontWeight.SemiBold)
+            }
         }
-        Spacer(Modifier.height(10.dp))
-        OutlinedButton(onClick = onPick, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.PhotoLibrary, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Galeriden seç")
-        }
         Spacer(Modifier.height(18.dp))
-        EmptyState("İpucu", "Kadrajda tahtanın dört köşesini mümkün olduğunca görünür tut.")
     }
 }
 
 @Composable
 private fun ImageReviewScreen(state: Board2NotesUiState, viewModel: Board2NotesViewModel, onContinue: () -> Unit) {
-    ScreenColumn {
-        Spacer(Modifier.height(16.dp))
-        PipelineStepper(current = 0)
-        Spacer(Modifier.height(16.dp))
-        SectionTitle("Görüntüyü kontrol et", "Gerekirse döndür, sonra tahta alanını bul.")
-        Spacer(Modifier.height(16.dp))
-        state.selectedImage?.let { PreviewImage(it) } ?: StatusBanner("Görüntü yükleniyor...", busy = true)
-        Spacer(Modifier.height(16.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { viewModel.rotateSelected(-90f) }, modifier = Modifier.weight(1f)) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(Modifier.height(16.dp))
+            PipelineStepper(current = 0)
+            Spacer(Modifier.height(16.dp))
+            SectionTitle("Görüntüyü kontrol et", "Gerekirse döndür, sonra devam et.")
+            Spacer(Modifier.height(16.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 1.dp,
+                shadowElevation = 2.dp,
+                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    state.selectedImage?.let {
+                        Image(
+                            bitmap = it.asImageBitmap(),
+                            contentDescription = "Seçilen görüntü",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    } ?: StatusBanner("Görüntü yükleniyor...", busy = true)
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 2.dp,
+            shadowElevation = 0.dp
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.rotateSelected(-90f) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
                 Icon(Icons.Default.Rotate90DegreesCcw, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(6.dp))
                 Text("Döndür")
             }
-            Button(onClick = onContinue, modifier = Modifier.weight(1f), enabled = state.selectedImage != null) {
+                Button(
+                    onClick = onContinue,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    enabled = state.selectedImage != null,
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
                 Icon(Icons.Default.Check, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Onayla")
+                    Spacer(Modifier.width(6.dp))
+                    Text("Devam Et")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CapturePreviewCard(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(28.dp),
+        color = Color(0xFF0F172A),
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF0F172A), Color(0xFF172554), Color(0xFF1E3A8A))
+                    )
+                )
+                .padding(24.dp)
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val stroke = 4.dp.toPx()
+                val line = 42.dp.toPx()
+                val corner = 14.dp.toPx()
+                val scanY = size.height * 0.44f
+                drawLine(
+                    color = Color(0x662563EB),
+                    start = Offset(size.width * 0.08f, scanY),
+                    end = Offset(size.width * 0.92f, scanY),
+                    strokeWidth = 2.dp.toPx()
+                )
+                listOf(
+                    Offset(0f, 0f),
+                    Offset(size.width, 0f),
+                    Offset(0f, size.height),
+                    Offset(size.width, size.height)
+                ).forEach { point ->
+                    val left = point.x == 0f
+                    val top = point.y == 0f
+                    val x = if (left) corner else size.width - corner
+                    val y = if (top) corner else size.height - corner
+                    val horizontalEnd = if (left) x + line else x - line
+                    val verticalEnd = if (top) y + line else y - line
+                    drawLine(Color.White.copy(alpha = 0.82f), Offset(x, y), Offset(horizontalEnd, y), stroke)
+                    drawLine(Color.White.copy(alpha = 0.82f), Offset(x, y), Offset(x, verticalEnd), stroke)
+                }
+            }
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    modifier = Modifier.size(76.dp),
+                    shape = CircleShape,
+                    color = Color.White.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.16f))
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    "Akıllı tahta algılama",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Köşeleri hizalayın, Board2Note notunuzu hazırlasın.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.72f),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
@@ -494,47 +1038,242 @@ private fun BoardCropScreen(
     onSkipToNote: () -> Unit = {}
 ) {
     val detection = state.boardDetection
-    ScreenColumn {
-        Spacer(Modifier.height(16.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(Modifier.height(18.dp))
         PipelineStepper(current = 1)
-        Spacer(Modifier.height(16.dp))
-        SectionTitle("Tahta alanı", "Overlay, crop ve köşe düzeltmesini kontrol et.")
-        Spacer(Modifier.height(12.dp))
-        if (state.isBusy) StatusBanner("Tahta alanı bulunuyor...", busy = true)
-        detection?.warnings?.forEach { WarningText(it); Spacer(Modifier.height(8.dp)) }
+        Spacer(Modifier.height(18.dp))
+        BoardCropHeader()
+        Spacer(Modifier.height(18.dp))
+        if (state.isBusy) {
+            StatusBanner("Tahta alanı bulunuyor...", busy = true)
+            Spacer(Modifier.height(12.dp))
+        }
+        detection?.warnings?.filterNot(::isManualCropAppliedWarning)?.forEach {
+            WarningText(it)
+            Spacer(Modifier.height(8.dp))
+        }
         detection?.let {
-            ImageWithQuad(bitmap = it.overlayBitmap, quad = state.manualQuad)
-            Spacer(Modifier.height(16.dp))
-            Text("Hassasiyet: ${"%.2f".format(state.settings.threshold)}")
-            Slider(
-                value = state.settings.threshold,
-                onValueChange = viewModel::setThreshold,
-                valueRange = 0.45f..0.60f
+            CropPreviewPanel {
+                ImageWithQuad(
+                    bitmap = it.overlayBitmap,
+                    quad = state.manualQuad,
+                    onCornerDrag = viewModel::updateManualCorner
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            CropThresholdPanel(
+                threshold = state.settings.threshold,
+                onThresholdChange = viewModel::setThreshold
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = viewModel::detectBoard, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Tekrar")
-                }
-                Button(onClick = onContinue, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.Check, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Devam")
-                }
+            Spacer(Modifier.height(14.dp))
+            CropActionPanel(
+                onRetry = viewModel::detectBoard,
+                onContinue = onContinue,
+                onSkipToNote = onSkipToNote
+            )
+            Spacer(Modifier.height(18.dp))
+            CropResultPanel {
+                PreviewImage(it.cropBitmap)
             }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onSkipToNote, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Edit, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("İşlemi atla → Not editörü")
-            }
-            Spacer(Modifier.height(16.dp))
-            SectionTitle("Düzeltilmiş crop")
-            Spacer(Modifier.height(8.dp))
-            PreviewImage(it.cropBitmap)
             Spacer(Modifier.height(16.dp))
             ManualCornerEditor(state, viewModel)
+            Spacer(Modifier.height(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun BoardCropHeader() {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            "Tahta Alanını Seç",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Tahtanın köşelerini kontrol edin ve gerekli düzenlemeleri yapın.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun isManualCropAppliedWarning(message: String): Boolean =
+    message.equals("Elle düzeltilmiş kırpma uygulandı.", ignoreCase = true) ||
+        message.equals("Elle duzeltilmis kirpma uygulandi.", ignoreCase = true)
+
+@Composable
+private fun CropPreviewPanel(content: @Composable () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Algılanan alan",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color(0xFFEFF6FF)
+                ) {
+                    Text(
+                        "Köşe kontrolü",
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = Color(0xFFF8FAFC),
+                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            ) {
+                Box(Modifier.padding(8.dp)) {
+                    content()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CropThresholdPanel(threshold: Float, onThresholdChange: (Float) -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Algılama hassasiyeti",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "%.2f".format(threshold),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Slider(
+                value = threshold,
+                onValueChange = onThresholdChange,
+                valueRange = 0.45f..0.60f
+            )
+        }
+    }
+}
+
+@Composable
+private fun CropActionPanel(
+    onRetry: () -> Unit,
+    onContinue: () -> Unit,
+    onSkipToNote: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 1.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onRetry,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
+                    border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("Tekrar")
+                }
+                Button(
+                    onClick = onContinue,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("Devam", fontWeight = FontWeight.SemiBold)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onSkipToNote,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(15.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("İşlemi atla → Not Editörü")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CropResultPanel(content: @Composable () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                "Düzeltilmiş crop",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(10.dp))
+            content()
         }
     }
 }
@@ -545,22 +1284,66 @@ private fun ManualCornerEditor(state: Board2NotesUiState, viewModel: Board2Notes
     val quad = state.manualQuad ?: return
     val points = listOf(quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft)
     val labels = listOf("Sol üst", "Sağ üst", "Sağ alt", "Sol alt")
-    SectionTitle("Elle düzelt", "Köşeleri ince ayarla ve crop sonucunu yenile.")
-    Spacer(Modifier.height(8.dp))
-    labels.forEachIndexed { index, label ->
-        Text(label, style = MaterialTheme.typography.labelLarge)
-        CornerSlider("X", points[index].x, 0f..image.width.toFloat()) {
-            viewModel.updateManualCorner(index, it, points[index].y)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "Elle düzelt",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Köşeleri ince ayarla ve crop sonucunu yenile.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(14.dp))
+            labels.forEachIndexed { index, label ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    color = Color(0xFFF8FAFC),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        CornerSlider("X", points[index].x, 0f..image.width.toFloat()) {
+                            viewModel.updateManualCorner(index, it, points[index].y)
+                        }
+                        CornerSlider("Y", points[index].y, 0f..image.height.toFloat()) {
+                            viewModel.updateManualCorner(index, points[index].x, it)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+            OutlinedButton(
+                onClick = viewModel::applyManualPerspective,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+            ) {
+                Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Tahtayı düzelt", fontWeight = FontWeight.SemiBold)
+            }
         }
-        CornerSlider("Y", points[index].y, 0f..image.height.toFloat()) {
-            viewModel.updateManualCorner(index, points[index].x, it)
-        }
-        Spacer(Modifier.height(6.dp))
-    }
-    OutlinedButton(onClick = viewModel::applyManualPerspective, modifier = Modifier.fillMaxWidth()) {
-        Icon(Icons.Default.Tune, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
-        Text("Tahtayı düzelt")
     }
 }
 
@@ -649,52 +1432,63 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
 
     ScreenColumn {
         Spacer(Modifier.height(20.dp))
+        PipelineStepper(current = 4)
+        Spacer(Modifier.height(18.dp))
 
-        Row(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        RoundedCornerShape(14.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Edit,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column {
-                Text(
-                    "Not Editörü",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Text(
-                    "Düzenle, kaydet ve paylaş",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-
-        Spacer(Modifier.height(20.dp))
-
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(Modifier.padding(18.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(16.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Not Editörü",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Text(
+                            "Düzenle, kaydet ve paylaş",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            "$wordCount kelime",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                Spacer(Modifier.height(18.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         Icons.Default.TextFields,
@@ -710,7 +1504,7 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(14.dp))
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it; viewModel.updateNote(it, body, course) },
@@ -771,13 +1565,15 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
 
         Spacer(Modifier.height(16.dp))
 
-        ElevatedCard(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(modifier = Modifier.padding(18.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -795,18 +1591,18 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                             "Not İçeriği",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
                     Surface(
                         shape = RoundedCornerShape(20.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer
+                        color = Color(0xFFF1F5F9)
                     ) {
                         Text(
-                            "$wordCount kelime",
+                            "Canlı düzenleme",
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -817,7 +1613,7 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                     placeholder = { Text("Notlarınızı buraya yazın...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)) },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(340.dp),
+                        .height(400.dp),
                     shape = RoundedCornerShape(14.dp)
                 )
             }
@@ -826,13 +1622,14 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
         Spacer(Modifier.height(16.dp))
 
         state.enhancement?.textLayerBitmap?.let {
-            ElevatedCard(
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface),
-                elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 1.dp,
+                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Default.Image,
@@ -860,53 +1657,60 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
             Spacer(Modifier.height(16.dp))
         }
 
-        Button(
-            onClick = { viewModel.saveCurrentNote(onNotes) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            shadowElevation = 1.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
         ) {
-            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Kaydet", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            FilledTonalButton(
-                onClick = { copyNote(context, state.note ?: note) },
-                modifier = Modifier.weight(1f).height(46.dp),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Kopyala", style = MaterialTheme.typography.labelLarge)
+            Column(Modifier.padding(14.dp)) {
+                Button(
+                    onClick = { viewModel.saveCurrentNote(onNotes) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(54.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Kaydet", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    FilledTonalButton(
+                        onClick = { copyNote(context, state.note ?: note) },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = Color(0xFFF1F5F9),
+                            contentColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Kopyala", style = MaterialTheme.typography.labelLarge)
+                    }
+                    FilledTonalButton(
+                        onClick = { shareNote(context, state.note ?: note) },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = Color(0xFFF1F5F9),
+                            contentColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Paylaş", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
             }
-            FilledTonalButton(
-                onClick = { shareNote(context, state.note ?: note) },
-                modifier = Modifier.weight(1f).height(46.dp),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Paylaş", style = MaterialTheme.typography.labelLarge)
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        FilledTonalButton(
-            onClick = onNotes,
-            modifier = Modifier.fillMaxWidth().height(46.dp),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Notlarım", style = MaterialTheme.typography.labelLarge)
         }
 
         Spacer(Modifier.height(24.dp))
@@ -1220,47 +2024,212 @@ private fun NoteDetailScreen(
 ) {
     val note = state.selectedSavedNote
     val context = LocalContext.current
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            title = {
+                Text(
+                    "Notu silmek istediğinize emin misiniz?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = { Text("Bu işlem geri alınamaz.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteDialog = false
+                        onDeleted()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Sil")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Vazgeç", color = MaterialTheme.colorScheme.secondary)
+                }
+            }
+        )
+    }
+
     ScreenColumn {
         Spacer(Modifier.height(16.dp))
         if (note == null) {
             StatusBanner("Not yükleniyor...", busy = true)
             return@ScreenColumn
         }
-        SectionTitle(note.title, note.courseName.ifBlank { "Kaydedilen B2Note notu" })
-        Spacer(Modifier.height(10.dp))
-        Text(formatDate(note.updatedAtEpochMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        modifier = Modifier.size(48.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Description,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            note.title.ifBlank { "Başlıksız not" },
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            note.courseName.ifBlank { "Kaydedilen B2Note notu" },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color(0xFFF1F5F9)
+                ) {
+                    Text(
+                        formatDate(note.updatedAtEpochMs),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
         FilePreview(note.whitePageImagePath, "Beyaz sayfa")
-        Spacer(Modifier.height(12.dp))
-        Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-            Text(note.body, modifier = Modifier.padding(12.dp), style = MaterialTheme.typography.bodyMedium)
+
+        Spacer(Modifier.height(16.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            shadowElevation = 1.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        ) {
+            Column(Modifier.padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.TextFields,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Not İçeriği",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    note.body.ifBlank { "Boş not" },
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    lineHeight = 24.sp
+                )
+            }
         }
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { copySavedNote(context, note) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.ContentCopy, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Kopyala")
-            }
-            Button(onClick = { shareSavedNote(context, note) }, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.Share, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Paylaş")
+
+        Spacer(Modifier.height(16.dp))
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        ) {
+            Column(Modifier.padding(14.dp)) {
+                Button(
+                    onClick = onEdit,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(19.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Düzenle", fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    FilledTonalButton(
+                        onClick = { copySavedNote(context, note) },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = Color(0xFFF1F5F9),
+                            contentColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Kopyala")
+                    }
+                    FilledTonalButton(
+                        onClick = { shareSavedNote(context, note) },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = Color(0xFFF1F5F9),
+                            contentColor = MaterialTheme.colorScheme.secondary
+                        )
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Paylaş")
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { showDeleteDialog = true },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(15.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
+                    border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Sil", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.Edit, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Düzenle")
-            }
-            OutlinedButton(onClick = onDeleted, modifier = Modifier.weight(1f)) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Sil")
-            }
-        }
+
         if (state.settings.debugMode) {
             Spacer(Modifier.height(12.dp))
             FilePreview(note.cropImagePath, "Crop")
@@ -1269,67 +2238,332 @@ private fun NoteDetailScreen(
             Spacer(Modifier.height(8.dp))
             Text("OCR ham metni:\n${note.ocrText}", style = MaterialTheme.typography.bodySmall)
         }
+        Spacer(Modifier.height(18.dp))
     }
 }
 
 @Composable
 private fun SettingsScreen(state: Board2NotesUiState, viewModel: Board2NotesViewModel, onAbout: () -> Unit) {
     ScreenColumn {
+        Spacer(Modifier.height(18.dp))
+        SettingsHeroCard()
         Spacer(Modifier.height(16.dp))
-        SectionTitle("Ayarlar", "Model davranışı, not üretimi ve geliştirici seçenekleri.")
+
+        SettingsSection(title = "Uygulama Ayarları") {
+            SettingInfoRow(Icons.Default.AutoAwesome, "Tema", "Board2Note mavi/lacivert")
+            SettingInfoRow(Icons.Default.Language, "Dil", "Türkçe")
+            SettingInfoRow(Icons.Default.Notifications, "Bildirimler", "Kapalı")
+        }
+
         Spacer(Modifier.height(16.dp))
-        Text("Tahta hassasiyeti: ${"%.2f".format(state.settings.threshold)}")
-        Slider(state.settings.threshold, viewModel::setThreshold, valueRange = 0.45f..0.60f)
-        ToggleRow("Debug mode", state.settings.debugMode, viewModel::setDebugMode)
-        ToggleRow("LLM ile düzenleme", state.settings.llmEnabled, viewModel::setLlmEnabled)
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = state.settings.groqApiKey,
-            onValueChange = viewModel::setGroqApiKey,
-            label = { Text("Groq API anahtarı") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-        Spacer(Modifier.height(16.dp))
-        Text("Model 2 önceliği", style = MaterialTheme.typography.titleMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ModeButton("OCR", state.settings.enhancementMode == EnhancementMode.Ocr, Modifier.weight(1f)) {
-                viewModel.setEnhancementMode(EnhancementMode.Ocr)
+
+        SettingsSection(title = "Not Ayarları") {
+            SettingInfoRow(Icons.Default.Description, "Varsayılan kayıt biçimi", "Düzenlenebilir not")
+            SettingInfoRow(Icons.Default.PictureAsPdf, "PDF dışa aktarma", "Paylaşım seçeneklerinden kullanılabilir")
+            SettingSwitchRow(Icons.Default.AutoAwesome, "LLM ile düzenleme", "Not oluşturma tercihleri", state.settings.llmEnabled, viewModel::setLlmEnabled)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Model 2 önceliği",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                ModeButton("OCR", state.settings.enhancementMode == EnhancementMode.Ocr, Modifier.weight(1f)) {
+                    viewModel.setEnhancementMode(EnhancementMode.Ocr)
+                }
+                ModeButton("Beyaz sayfa", state.settings.enhancementMode == EnhancementMode.VisualNote, Modifier.weight(1f)) {
+                    viewModel.setEnhancementMode(EnhancementMode.VisualNote)
+                }
             }
-            ModeButton("Beyaz sayfa", state.settings.enhancementMode == EnhancementMode.VisualNote, Modifier.weight(1f)) {
-                viewModel.setEnhancementMode(EnhancementMode.VisualNote)
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Tahta hassasiyeti: ${"%.2f".format(state.settings.threshold)}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Slider(state.settings.threshold, viewModel::setThreshold, valueRange = 0.45f..0.60f)
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        SettingsSection(title = "Geliştirici ve OCR") {
+            SettingSwitchRow(Icons.Default.BugReport, "Debug modu", "Pipeline çıktıları ve tanılama dosyaları", state.settings.debugMode, viewModel::setDebugMode)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = state.settings.groqApiKey,
+                onValueChange = viewModel::setGroqApiKey,
+                label = { Text("Groq API anahtarı") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "OCR motoru",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(Modifier.height(8.dp))
+            OcrEngineChoice.entries.forEach { choice ->
+                TextButton(onClick = { viewModel.setOcrEngineChoice(choice) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (state.settings.ocrEngineChoice == choice) "✓ ${choice.name}" else choice.name)
+                }
             }
         }
+
         Spacer(Modifier.height(16.dp))
-        Text("OCR motoru", style = MaterialTheme.typography.titleMedium)
-        OcrEngineChoice.entries.forEach { choice ->
-            TextButton(onClick = { viewModel.setOcrEngineChoice(choice) }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (state.settings.ocrEngineChoice == choice) "✓ ${choice.name}" else choice.name)
-            }
+
+        SettingsSection(title = "Hakkında") {
+            SettingActionRow(Icons.Default.Info, "Uygulama bilgisi", "Sürüm ve proje bilgileri", onAbout)
+            SettingInfoRow(Icons.Default.Description, "Sürüm bilgisi", "0.1.0 ürün prototipi")
+            SettingInfoRow(Icons.Default.Folder, "Proje bilgileri", "Board2Note yapay zekâ destekli not uygulaması")
         }
-        Spacer(Modifier.height(10.dp))
-        OutlinedButton(onClick = onAbout, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.Info, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Hakkında")
-        }
+
+        Spacer(Modifier.height(16.dp))
         WarningText("TrOCR ve PaddleOCR adapterleri ileride bağlanmak üzere ayrıldı; bu sürümde birincil OCR ML Kit Latin kullanır.")
+        Spacer(Modifier.height(18.dp))
+    }
+}
+
+@Composable
+private fun SettingsHeroCard() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        shadowElevation = 2.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(48.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text("Ayarlar", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "Uygulama, not ve model tercihlerini yönetin.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(14.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SettingInfoRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingsRowIcon(icon)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(2.dp))
+            Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SettingSwitchRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    value: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        SettingsRowIcon(icon)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Spacer(Modifier.height(2.dp))
+            Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun SettingActionRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    value: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFFF8FAFC),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SettingsRowIcon(icon)
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                Spacer(Modifier.height(2.dp))
+                Text(value, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SettingsRowIcon(icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Surface(
+        modifier = Modifier.size(40.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primaryContainer
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+        }
     }
 }
 
 @Composable
 private fun AboutScreen() {
     ScreenColumn {
-        Spacer(Modifier.height(24.dp))
-        B2NoteLogo(compact = false)
         Spacer(Modifier.height(18.dp))
-        SectionTitle("B2Note hakkında", "Tahta görüntülerini düzenlenebilir ders notlarına dönüştüren yerel-öncelikli Android uygulaması.")
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                B2NoteLogo(compact = false)
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    "B2Note hakkında",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Tahta görüntülerini düzenlenebilir ders notlarına dönüştüren yerel-öncelikli Android uygulaması.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                AboutInfoLine("Sürüm", "0.1.0 ürün prototipi", Icons.Default.Info)
+                AboutInfoLine("Model 1", "ONNX tahta/projeksiyon segmentasyonu", Icons.Default.Tune)
+                AboutInfoLine("Model 2", "ONNX iyileştirme, OCR görüntüsü ve beyaz sayfa çıktısı", Icons.Default.AutoAwesome)
+                AboutInfoLine("OCR", "ML Kit Text Recognition v2 Latin", Icons.Default.TextFields)
+                AboutInfoLine("Gizlilik", "Notlar ve görseller cihazın uygulama alanında saklanır.", Icons.Default.Description, showDivider = false)
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+    }
+}
+
+@Composable
+private fun AboutInfoLine(
+    label: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    showDivider: Boolean = true
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Surface(
+            modifier = Modifier.size(40.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.primaryContainer
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(Modifier.height(3.dp))
+            Text(
+                value,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+    if (showDivider) {
         Spacer(Modifier.height(14.dp))
-        InfoLine("Sürüm", "0.1.0 ürün prototipi")
-        InfoLine("Model 1", "ONNX tahta/projeksiyon segmentasyonu")
-        InfoLine("Model 2", "ONNX iyileştirme, OCR görüntüsü ve beyaz sayfa çıktısı")
-        InfoLine("OCR", "ML Kit Text Recognition v2 Latin")
-        InfoLine("Gizlilik", "Notlar ve görseller cihazın uygulama alanında saklanır.")
+        Divider(color = Color(0xFFE2E8F0))
+        Spacer(Modifier.height(14.dp))
     }
 }
 
@@ -1353,24 +2587,23 @@ private fun DebugArtifactsScreen(state: Board2NotesUiState, viewModel: Board2Not
 }
 
 @Composable
-private fun B2NoteLogo(compact: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(if (compact) 34.dp else 62.dp)) {
+private fun B2NoteLogo(compact: Boolean, modifier: Modifier = Modifier) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
+        Surface(shape = RoundedCornerShape(if (compact) 10.dp else 16.dp), color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(if (compact) 34.dp else 62.dp)) {
             Canvas(modifier = Modifier.fillMaxSize().padding(7.dp)) {
                 drawRoundRect(Color.White, topLeft = Offset(size.width * 0.12f, size.height * 0.08f), size = Size(size.width * 0.72f, size.height * 0.72f))
-                drawLine(Color(0xFF0F5F66), Offset(size.width * 0.28f, size.height * 0.32f), Offset(size.width * 0.72f, size.height * 0.32f), strokeWidth = 3f)
-                drawLine(Color(0xFF0F5F66), Offset(size.width * 0.28f, size.height * 0.48f), Offset(size.width * 0.62f, size.height * 0.48f), strokeWidth = 3f)
-                drawLine(Color(0xFFF3B340), Offset(size.width * 0.54f, size.height * 0.72f), Offset(size.width * 0.88f, size.height * 0.96f), strokeWidth = 6f)
+                drawLine(Color(0xFF0F172A), Offset(size.width * 0.28f, size.height * 0.32f), Offset(size.width * 0.72f, size.height * 0.32f), strokeWidth = 3f)
+                drawLine(Color(0xFF0F172A), Offset(size.width * 0.28f, size.height * 0.48f), Offset(size.width * 0.62f, size.height * 0.48f), strokeWidth = 3f)
+                drawLine(Color(0xFF60A5FA), Offset(size.width * 0.54f, size.height * 0.72f), Offset(size.width * 0.88f, size.height * 0.96f), strokeWidth = 6f)
             }
         }
         Spacer(Modifier.width(12.dp))
         Column {
             Text(
-                "B2Note",
-                fontFamily = FontFamily.Cursive,
+                "Board2Note",
                 fontWeight = FontWeight.Bold,
-                fontSize = if (compact) 24.sp else 38.sp,
-                color = MaterialTheme.colorScheme.primary
+                fontSize = if (compact) 20.sp else 34.sp,
+                color = MaterialTheme.colorScheme.onBackground
             )
             if (!compact) Text("Board to notes", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -1382,18 +2615,43 @@ private fun PipelineStepper(current: Int) {
     val steps = listOf("Görüntü", "Tahta", "İyileştirme", "OCR", "Not")
     Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
         steps.forEachIndexed { index, label ->
+            val isActive = index == current
+            val isDone = index < current
+            val circleColor = when {
+                isActive -> MaterialTheme.colorScheme.primary
+                isDone -> MaterialTheme.colorScheme.secondary
+                else -> Color(0xFFE2E8F0)
+            }
+            val labelColor = when {
+                isActive -> MaterialTheme.colorScheme.primary
+                isDone -> MaterialTheme.colorScheme.secondary
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            }
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
                 Surface(
                     shape = CircleShape,
-                    color = if (index <= current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.size(28.dp)
+                    color = circleColor,
+                    tonalElevation = if (isActive) 2.dp else 0.dp,
+                    modifier = Modifier.size(if (isActive) 32.dp else 28.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text("${index + 1}", color = if (index <= current) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            "${index + 1}",
+                            color = if (index <= current) Color.White else Color(0xFF64748B),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(label, style = MaterialTheme.typography.labelSmall)
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = labelColor,
+                    fontWeight = if (isActive) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -1498,7 +2756,13 @@ private fun ModeButton(label: String, selected: Boolean, modifier: Modifier, onC
 @Composable
 private fun CornerSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, onChange: (Float) -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("$label ${value.toInt()}", modifier = Modifier.width(64.dp), style = MaterialTheme.typography.bodySmall)
+        Text(
+            "$label ${value.toInt()}",
+            modifier = Modifier.width(64.dp),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Slider(value = value.coerceIn(range.start, range.endInclusive), onValueChange = onChange, valueRange = range)
     }
 }
@@ -1506,73 +2770,266 @@ private fun CornerSlider(label: String, value: Float, range: ClosedFloatingPoint
 @Composable
 private fun FolderScreen(
     state: Board2NotesUiState,
+    viewModel: Board2NotesViewModel,
     courseName: String,
     onOpen: (SavedNote) -> Unit
 ) {
-    val color = folderColor(courseName)
     val notes = remember(state.savedNotes, courseName) {
         state.savedNotes
             .filter { (it.courseName.ifBlank { "Genel" }) == courseName }
             .sortedByDescending { it.updatedAtEpochMs }
     }
+    var selectionMode by remember(courseName) { mutableStateOf(false) }
+    var selectedIds by remember(courseName) { mutableStateOf(setOf<String>()) }
+    var deleteMode by remember { mutableStateOf<FolderDeleteMode?>(null) }
+
+    LaunchedEffect(notes) {
+        selectedIds = selectedIds.intersect(notes.map { it.id }.toSet())
+        if (selectedIds.isEmpty() && selectionMode && notes.isEmpty()) selectionMode = false
+    }
+
+    deleteMode?.let { mode ->
+        AlertDialog(
+            onDismissRequest = { deleteMode = null },
+            shape = RoundedCornerShape(24.dp),
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Text(
+                    if (mode == FolderDeleteMode.Selected) {
+                        "Seçili notları silmek istiyor musunuz?"
+                    } else {
+                        "Bu dersteki tüm notları silmek istiyor musunuz?"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = { Text("Bu işlem geri alınamaz.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val ids = if (mode == FolderDeleteMode.Selected) selectedIds else notes.map { it.id }.toSet()
+                        viewModel.deleteNotes(ids)
+                        selectedIds = emptySet()
+                        selectionMode = false
+                        deleteMode = null
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text(if (mode == FolderDeleteMode.Selected) "Sil" else "Tümünü Sil")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteMode = null }) {
+                    Text("Vazgeç", color = MaterialTheme.colorScheme.secondary)
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
     ) {
-        // Hero header
-        Box(
+        Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(150.dp)
-                .background(
-                    Brush.linearGradient(listOf(color, color.copy(alpha = 0.72f)))
-                )
-                .padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
-            contentAlignment = Alignment.BottomStart
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 1.dp,
+            shadowElevation = 2.dp,
+            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
         ) {
-            Column {
-                Text(
-                    courseName,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "${notes.size} not",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.78f)
-                )
+            Column(Modifier.padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        modifier = Modifier.size(50.dp),
+                        shape = RoundedCornerShape(17.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            courseName,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (selectionMode) "${selectedIds.size} not seçildi" else "${notes.size} not",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = {
+                            selectionMode = !selectionMode
+                            if (!selectionMode) selectedIds = emptySet()
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(15.dp),
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
+                        enabled = notes.isNotEmpty()
+                    ) {
+                        Text(if (selectionMode) "Vazgeç" else "Seç")
+                    }
+                    OutlinedButton(
+                        onClick = { deleteMode = FolderDeleteMode.Selected },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(15.dp),
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.secondary),
+                        enabled = selectionMode && selectedIds.isNotEmpty()
+                    ) {
+                        Text("Seçileni Sil")
+                    }
+                    Button(
+                        onClick = { deleteMode = FolderDeleteMode.All },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(15.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        enabled = notes.isNotEmpty()
+                    ) {
+                        Text("Tümünü Sil")
+                    }
+                }
             }
         }
-        // Notlar
+
         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(18.dp))
             if (notes.isEmpty()) {
-                EmptyState("Henüz not yok", "Bu derse ait not bulunmuyor.")
+                FolderEmptyState()
             } else {
-                notes.chunked(2).forEach { row ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        row.forEach { note ->
-                            NoteGridCard(
-                                note = note,
-                                onClick = { onOpen(note) },
-                                modifier = Modifier.weight(1f)
-                            )
+                notes.forEach { note ->
+                    FolderNoteCard(
+                        note = note,
+                        selectionMode = selectionMode,
+                        selected = selectedIds.contains(note.id),
+                        onClick = {
+                            if (selectionMode) {
+                                selectedIds = if (selectedIds.contains(note.id)) selectedIds - note.id else selectedIds + note.id
+                            } else {
+                                onOpen(note)
+                            }
                         }
-                        if (row.size == 1) Spacer(Modifier.weight(1f))
-                    }
+                    )
                     Spacer(Modifier.height(12.dp))
                 }
             }
             Spacer(Modifier.height(16.dp))
+        }
+    }
+}
+
+private enum class FolderDeleteMode { Selected, All }
+
+@Composable
+private fun FolderEmptyState() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 22.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                modifier = Modifier.size(56.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("Bu derste henüz not yok.", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Yeni bir tahta notu oluşturarak başlayın.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+private fun FolderNoteCard(
+    note: SavedNote,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else Color(0xFFE2E8F0))
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (selectionMode) {
+                Checkbox(checked = selected, onCheckedChange = { onClick() })
+                Spacer(Modifier.width(8.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    note.title.ifBlank { "Başlıksız not" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    formatDate(note.createdAtEpochMs),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    note.preview.ifBlank { "Boş not" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Description, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                }
+            }
         }
     }
 }
@@ -1725,14 +3182,12 @@ private fun NoteGridCard(
 
 private fun folderColor(courseName: String): Color {
     val palette = listOf(
-        Color(0xFF126A73),
-        Color(0xFF2E7D67),
-        Color(0xFF1565A0),
-        Color(0xFF6A1B9A),
-        Color(0xFF558B2F),
-        Color(0xFFBF360C),
-        Color(0xFF37474F),
-        Color(0xFF00695C)
+        Color(0xFF2563EB),
+        Color(0xFF1D4ED8),
+        Color(0xFF0F172A),
+        Color(0xFF334155),
+        Color(0xFF475569),
+        Color(0xFF1E40AF)
     )
     return palette[Math.abs(courseName.hashCode()) % palette.size]
 }
@@ -1750,18 +3205,20 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
 }
 
 private fun titleForRoute(route: String?): String = when {
-    route == Route.Capture -> "Yeni not"
-    route == Route.Review -> "Görüntü"
-    route == Route.Crop -> "Tahta crop"
-    route == Route.Enhancement -> "İyileştirme"
+    route == Route.Home -> "Ana Sayfa"
+    route == Route.Capture -> "Görsel Seçimi"
+    route == Route.Review -> "Görsel Önizleme"
+    route == Route.Crop -> "Tahta Alanı Seçimi"
+    route == Route.Enhancement -> "Görüntü İyileştirme"
     route == Route.Ocr -> "OCR"
-    route == Route.NoteEditor -> "Not editörü"
+    route == Route.NoteEditor -> "Not Editörü"
     route == Route.Notes -> "Notlarım"
-    route?.startsWith(Route.NoteDetail) == true -> "Not detayı"
+    route?.startsWith(Route.NoteDetail) == true -> "Not Detayı"
+    route?.startsWith(Route.Folder) == true -> "Ders Notları"
     route == Route.Settings -> "Ayarlar"
     route == Route.About -> "Hakkında"
     route == Route.Debug -> "Debug"
-    else -> "B2Note"
+    else -> "Board2Note"
 }
 
 private fun createCameraUri(context: Context): Uri {
