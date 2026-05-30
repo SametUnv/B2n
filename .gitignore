@@ -10,6 +10,12 @@ Frontend/*.iml
 Frontend/logcat_*.txt
 *.log
 
+# Python / backend generated files
+__pycache__/
+*.py[cod]
+Backend/outputs/
+Python Frontend/notes/
+
 # Large local ML artifacts
 Frontend_Runtime_Models/
 Frontend_Runtime_Models.zip
