@@ -21,7 +21,13 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
 
     override suspend fun listNotes(): List<SavedNote> = withContext(Dispatchers.IO) {
         mutex.withLock {
-            readIndex().sortedByDescending { it.updatedAtEpochMs }
+            readIndex().filterNot { it.isArchived }.sortedByDescending { it.updatedAtEpochMs }
+        }
+    }
+
+    override suspend fun listArchivedNotes(): List<SavedNote> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            readIndex().filter { it.isArchived }.sortedByDescending { it.updatedAtEpochMs }
         }
     }
 
@@ -84,6 +90,23 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
         }
     }
 
+    override suspend fun archiveNote(id: String): SavedNote? = setArchived(id, archived = true)
+
+    override suspend fun unarchiveNote(id: String): SavedNote? = setArchived(id, archived = false)
+
+    private suspend fun setArchived(id: String, archived: Boolean): SavedNote? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val notes = readIndex()
+            val current = notes.firstOrNull { it.id == id } ?: return@withLock null
+            val updated = current.copy(
+                isArchived = archived,
+                updatedAtEpochMs = System.currentTimeMillis()
+            )
+            writeIndex(notes.map { if (it.id == id) updated else it })
+            updated
+        }
+    }
+
     private fun writeBitmap(bitmap: Bitmap, file: File): String {
         file.parentFile?.mkdirs()
         file.outputStream().use { output ->
@@ -121,6 +144,7 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
         .put("cropImagePath", cropImagePath ?: JSONObject.NULL)
         .put("ocrImagePath", ocrImagePath ?: JSONObject.NULL)
         .put("whitePageImagePath", whitePageImagePath ?: JSONObject.NULL)
+        .put("isArchived", isArchived)
 
     private fun JSONObject.toSavedNote(): SavedNote = SavedNote(
         id = getString("id"),
@@ -133,7 +157,8 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
         confidence = if (isNull("confidence")) null else optDouble("confidence").toFloat(),
         cropImagePath = nullableString("cropImagePath"),
         ocrImagePath = nullableString("ocrImagePath"),
-        whitePageImagePath = nullableString("whitePageImagePath")
+        whitePageImagePath = nullableString("whitePageImagePath"),
+        isArchived = optBoolean("isArchived", false)
     )
 
     private fun JSONObject.nullableString(name: String): String? =
