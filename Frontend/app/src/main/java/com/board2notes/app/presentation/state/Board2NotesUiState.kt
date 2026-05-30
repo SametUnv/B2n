@@ -36,6 +36,7 @@ data class Board2NotesUiState(
     val note: FormattedNote? = null,
     val activeSavedNoteId: String? = null,
     val savedNotes: List<SavedNote> = emptyList(),
+    val archivedNotes: List<SavedNote> = emptyList(),
     val selectedSavedNote: SavedNote? = null,
     val settings: AppSettings = AppSettings(),
     val pipelineState: PipelineState = PipelineState.Idle,

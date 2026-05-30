@@ -11,7 +11,8 @@ data class SavedNote(
     val confidence: Float?,
     val cropImagePath: String?,
     val ocrImagePath: String?,
-    val whitePageImagePath: String?
+    val whitePageImagePath: String?,
+    val isArchived: Boolean = false
 ) {
     val preview: String
         get() = body.lineSequence().firstOrNull { it.isNotBlank() }?.take(140).orEmpty()

@@ -40,8 +40,47 @@ class FileNoteRepositoryTest {
                 val updated = repository.updateContent(saved.id, "Turev", "Turev kurallari", "Matematik")
                 assertEquals("Turev", updated?.title)
                 assertTrue(repository.listNotes().first().body.contains("Turev"))
+                repository.archiveNote(saved.id)
+                assertTrue(repository.listNotes().isEmpty())
+                assertEquals(listOf(saved.id), repository.listArchivedNotes().map { it.id })
+                repository.unarchiveNote(saved.id)
+                assertEquals(listOf(saved.id), repository.listNotes().map { it.id })
                 repository.deleteNote(saved.id)
                 assertNull(repository.getNote(saved.id))
+            }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun repositoryTreatsMissingArchiveFieldAsActive() {
+        val root = createTempRoot()
+        try {
+            val notesRoot = File(root, "notes").apply { mkdirs() }
+            File(notesRoot, "notes.json").writeText(
+                """
+                [
+                  {
+                    "id": "legacy",
+                    "title": "Eski Not",
+                    "body": "İçerik",
+                    "courseName": "Genel",
+                    "createdAtEpochMs": 1,
+                    "updatedAtEpochMs": 2,
+                    "ocrText": "",
+                    "confidence": null,
+                    "cropImagePath": null,
+                    "ocrImagePath": null,
+                    "whitePageImagePath": null
+                  }
+                ]
+                """.trimIndent()
+            )
+            val repository = FileNoteRepository(root)
+            kotlinx.coroutines.runBlocking {
+                assertEquals(listOf("legacy"), repository.listNotes().map { it.id })
+                assertTrue(repository.listArchivedNotes().isEmpty())
             }
         } finally {
             root.deleteRecursively()

@@ -51,7 +51,8 @@ class Board2NotesViewModel(
     fun goHome() {
         _uiState.value = Board2NotesUiState(
             settings = _uiState.value.settings,
-            savedNotes = _uiState.value.savedNotes
+            savedNotes = _uiState.value.savedNotes,
+            archivedNotes = _uiState.value.archivedNotes
         )
     }
 
@@ -222,6 +223,7 @@ class Board2NotesViewModel(
                     activeSavedNoteId = saved.id,
                     selectedSavedNote = saved,
                     savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
                     screen = AppScreen.Note,
                     pipelineState = PipelineState.Completed(
                         com.board2notes.app.domain.pipeline.PipelineResult(
@@ -272,6 +274,7 @@ class Board2NotesViewModel(
                     activeSavedNoteId = saved.id,
                     selectedSavedNote = saved,
                     savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
                     isBusy = false
                 )
             }.onFailure { error ->
@@ -302,6 +305,7 @@ class Board2NotesViewModel(
                 _uiState.value = _uiState.value.copy(
                     selectedSavedNote = saved,
                     savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
                     userMessage = "Not kaydedildi."
                 )
                 onSaved?.invoke()
@@ -313,7 +317,10 @@ class Board2NotesViewModel(
 
     fun refreshNotes() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(savedNotes = loadNotesSafely())
+            _uiState.value = _uiState.value.copy(
+                savedNotes = loadNotesSafely(),
+                archivedNotes = loadArchivedNotesSafely()
+            )
         }
     }
 
@@ -344,6 +351,7 @@ class Board2NotesViewModel(
                     activeSavedNoteId = null,
                     note = null,
                     savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
                     screen = AppScreen.Notes,
                     userMessage = "Not silindi."
                 )
@@ -361,10 +369,59 @@ class Board2NotesViewModel(
             }.onSuccess {
                 _uiState.value = _uiState.value.copy(
                     savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
                     userMessage = "${ids.size} not silindi."
                 )
             }.onFailure { error ->
                 fail("Notlar silinemedi: ${error.message}", error)
+            }
+        }
+    }
+
+    fun deleteNoteById(id: String) {
+        viewModelScope.launch {
+            runCatching {
+                container.noteRepository.deleteNote(id)
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
+                    userMessage = "Not silindi."
+                )
+            }.onFailure { error ->
+                fail("Not silinemedi: ${error.message}", error)
+            }
+        }
+    }
+
+    fun archiveNote(id: String) {
+        viewModelScope.launch {
+            runCatching {
+                container.noteRepository.archiveNote(id)
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
+                    userMessage = "Not arşivlendi."
+                )
+            }.onFailure { error ->
+                fail("Not arşivlenemedi: ${error.message}", error)
+            }
+        }
+    }
+
+    fun unarchiveNote(id: String) {
+        viewModelScope.launch {
+            runCatching {
+                container.noteRepository.unarchiveNote(id)
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
+                    userMessage = "Not geri yüklendi."
+                )
+            }.onFailure { error ->
+                fail("Not geri yüklenemedi: ${error.message}", error)
             }
         }
     }
@@ -425,6 +482,9 @@ class Board2NotesViewModel(
 
     private suspend fun loadNotesSafely(): List<SavedNote> =
         runCatching { container.noteRepository.listNotes() }.getOrDefault(emptyList())
+
+    private suspend fun loadArchivedNotesSafely(): List<SavedNote> =
+        runCatching { container.noteRepository.listArchivedNotes() }.getOrDefault(emptyList())
 
     private fun SavedNote.toFormattedNote(): FormattedNote = FormattedNote(
         title = title,
