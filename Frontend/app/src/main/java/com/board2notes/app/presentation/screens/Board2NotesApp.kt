@@ -55,6 +55,8 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -72,6 +74,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -134,9 +137,14 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.board2notes.app.data.settings.ADB_REVERSE_BACKEND_BASE_URL
+import com.board2notes.app.data.settings.DEFAULT_BACKEND_BASE_URL
+import com.board2notes.app.data.settings.EMULATOR_BACKEND_BASE_URL
+import com.board2notes.app.data.settings.LAN_BACKEND_BASE_URL
 import com.board2notes.app.data.settings.OcrEngineChoice
 import com.board2notes.app.domain.model.EnhancementMode
 import com.board2notes.app.domain.model.FormattedNote
+import com.board2notes.app.domain.model.NoteType
 import com.board2notes.app.domain.model.PointF2
 import com.board2notes.app.domain.model.Quad
 import com.board2notes.app.domain.model.SavedNote
@@ -168,21 +176,25 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
+import com.board2notes.app.R
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Add
@@ -215,6 +227,14 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
     var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
     var isSearchingHome by remember { mutableStateOf(false) }
     var homeSearchQuery by remember { mutableStateOf("") }
+    var showCreateNoteSheet by remember { mutableStateOf(false) }
+    var showStartupLoading by remember { mutableStateOf(true) }
+    var showTopMenu by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        delay(650)
+        showStartupLoading = false
+    }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
@@ -252,6 +272,24 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
     val route = backStackEntry?.destination?.route
     val topLevel = route in setOf(Route.Home, Route.Notes, Route.Settings)
 
+    if (showCreateNoteSheet) {
+        CreateNoteSheet(
+            onDismiss = { showCreateNoteSheet = false },
+            onCreateText = {
+                showCreateNoteSheet = false
+                viewModel.createBlankNote(NoteType.Text) {
+                    navController.navigate(Route.NoteEditor)
+                }
+            },
+            onCreateCanvas = {
+                showCreateNoteSheet = false
+                viewModel.createBlankNote(NoteType.Canvas) {
+                    navController.navigate(Route.NoteEditor)
+                }
+            }
+        )
+    }
+
     Scaffold(
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
@@ -267,7 +305,8 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
             }
         },
         topBar = {
-            CenterAlignedTopAppBar(
+            if (route != Route.NoteEditor) {
+                CenterAlignedTopAppBar(
                 title = {
                     if (route == Route.Home && isSearchingHome) {
                         androidx.compose.foundation.text.BasicTextField(
@@ -331,6 +370,33 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                             )
                         }
                     }
+                    if (topLevel) {
+                        Box {
+                            IconButton(onClick = { showTopMenu = true }) {
+                                Icon(Icons.Default.MoreVert, contentDescription = "Daha fazla")
+                            }
+                            TopLevelOverflowMenu(
+                                expanded = showTopMenu,
+                                onDismiss = { showTopMenu = false },
+                                onHome = {
+                                    showTopMenu = false
+                                    navigateTopLevel(Route.Home, navController, viewModel)
+                                },
+                                onNotes = {
+                                    showTopMenu = false
+                                    navigateTopLevel(Route.Notes, navController, viewModel)
+                                },
+                                onArchive = {
+                                    showTopMenu = false
+                                    navController.navigate(Route.Archive)
+                                },
+                                onSettings = {
+                                    showTopMenu = false
+                                    navigateTopLevel(Route.Settings, navController, viewModel)
+                                }
+                            )
+                        }
+                    }
                     if (state.settings.debugMode && state.note != null) {
                         IconButton(onClick = { navController.navigate(Route.Debug) }) {
                             Icon(Icons.Default.BugReport, contentDescription = "Debug")
@@ -338,22 +404,23 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = if (route == Route.Capture) Color(0xFF0F172A) else MaterialTheme.colorScheme.background,
-                    titleContentColor = if (route == Route.Capture) Color.White else MaterialTheme.colorScheme.onBackground,
-                    navigationIconContentColor = if (route == Route.Capture) Color.White else MaterialTheme.colorScheme.onBackground,
-                    actionIconContentColor = if (route == Route.Capture) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    containerColor = MaterialTheme.colorScheme.background,
+                    titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            )
+                )
+            }
         },
         bottomBar = {
-            if (topLevel) {
+            if (topLevel && state.settings.showBottomNavigation) {
                 B2NoteBottomBar(route = route, navController = navController, viewModel = viewModel)
             }
         },
         floatingActionButton = {
             if (route == Route.Home || route == Route.Notes) {
                 Surface(
-                    onClick = { navController.navigate(Route.Capture) },
+                    onClick = { showCreateNoteSheet = true },
                     shape = RoundedCornerShape(20.dp),
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
                     contentColor = MaterialTheme.colorScheme.primary,
@@ -413,17 +480,17 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     HomeScreen(
                         state = state,
                         searchQuery = homeSearchQuery,
-                        onStart = { navController.navigate(Route.Capture) },
+                        onStart = { showCreateNoteSheet = true },
                         onOpenNote = { note ->
                             viewModel.openSavedNote(note.id)
-                            navController.navigate("${Route.NoteDetail}/${note.id}")
+                            navController.navigate(Route.NoteEditor)
                         },
                         onArchiveNote = viewModel::archiveNote,
                         onDeleteNote = viewModel::deleteNoteById
                     )
                 }
                 composable(Route.Capture) {
-                    CaptureScreen(
+                    SamsungCaptureScreen(
                         onPick = { galleryLauncher.launch("image/*") },
                         onCamera = {
                             val permissionGranted = ContextCompat.checkSelfPermission(
@@ -441,12 +508,20 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     )
                 }
                 composable(Route.Review) {
-                    ImageReviewScreen(
+                    SamsungImageReviewScreen(
                         state = state,
                         viewModel = viewModel,
                         onContinue = {
-                            viewModel.detectBoard()
-                            navController.navigate(Route.Crop)
+                            if (state.pendingScanNoteId != null) {
+                                viewModel.runBackendPipelineForPendingNote {
+                                    navController.navigate(Route.NoteEditor) {
+                                        popUpTo(Route.Capture) { inclusive = true }
+                                    }
+                                }
+                            } else {
+                                viewModel.detectBoard()
+                                navController.navigate(Route.Crop)
+                            }
                         }
                     )
                 }
@@ -481,9 +556,13 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     )
                 }
                 composable(Route.NoteEditor) {
-                    NoteEditorScreen(
+                    SamsungStyleNoteEditorScreen(
                         state = state,
                         viewModel = viewModel,
+                        onScan = {
+                            viewModel.startScanForCurrentNote()
+                            navController.navigate(Route.Capture)
+                        },
                         onNotes = {
                             viewModel.refreshNotes()
                             navigateTopLevel(Route.Notes, navController, viewModel)
@@ -496,7 +575,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                         state = state,
                         onOpen = { note ->
                             viewModel.openSavedNote(note.id)
-                            navController.navigate("${Route.NoteDetail}/${note.id}")
+                            navController.navigate(Route.NoteEditor)
                         },
                         onFolderOpen = { course ->
                             navController.navigate("${Route.Folder}/${Uri.encode(course)}")
@@ -511,7 +590,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                         viewModel = viewModel,
                         onOpen = { note ->
                             viewModel.openSavedNote(note.id)
-                            navController.navigate("${Route.NoteDetail}/${note.id}")
+                            navController.navigate(Route.NoteEditor)
                         }
                     )
                 }
@@ -542,7 +621,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     )
                 }
                 composable(Route.Settings) {
-                    SettingsScreen(
+                    SamsungSettingsScreen(
                         state = state,
                         viewModel = viewModel,
                         onAbout = { navController.navigate(Route.About) }
@@ -555,8 +634,195 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     DebugArtifactsScreen(state, viewModel)
                 }
             }
+            if (state.isBusy) {
+                BoardLoadingOverlay(message = loadingMessage(state))
+            } else if (showStartupLoading) {
+                BoardLoadingOverlay(message = "Not alanı hazırlanıyor.")
+            }
         }
     }
+}
+
+@Composable
+private fun TopLevelOverflowMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onHome: () -> Unit,
+    onNotes: () -> Unit,
+    onArchive: () -> Unit,
+    onSettings: () -> Unit
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            text = { Text("Ana sayfa") },
+            leadingIcon = { Icon(Icons.Default.Home, contentDescription = null) },
+            onClick = onHome
+        )
+        DropdownMenuItem(
+            text = { Text("Notlar") },
+            leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) },
+            onClick = onNotes
+        )
+        DropdownMenuItem(
+            text = { Text("ArÅŸivlenenler") },
+            leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) },
+            onClick = onArchive
+        )
+        DropdownMenuItem(
+            text = { Text("Ayarlar") },
+            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+            onClick = onSettings
+        )
+    }
+}
+
+@Composable
+private fun CreateNoteSheet(
+    onDismiss: () -> Unit,
+    onCreateText: () -> Unit,
+    onCreateCanvas: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Text(
+                "Yeni not",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                NoteTypeChoiceRow(
+                    title = "Yazı Notu",
+                    subtitle = "OCR metni ve elle yazılan ders notları",
+                    icon = Icons.Default.TextFields,
+                    onClick = onCreateText
+                )
+                NoteTypeChoiceRow(
+                    title = "Canvas Notu",
+                    subtitle = "Tahta çıktıları, çizim ve serbest sayfa",
+                    icon = Icons.Default.Brush,
+                    onClick = onCreateCanvas
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Vazgeç")
+            }
+        }
+    )
+}
+
+@Composable
+private fun NoteTypeChoiceRow(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFFF8FAFC),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = RoundedCornerShape(13.dp),
+                color = MaterialTheme.colorScheme.primaryContainer
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(2.dp))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun BoardLoadingOverlay(message: String) {
+    val transition = rememberInfiniteTransition(label = "board-loading")
+    val progress by transition.animateFloat(
+        initialValue = 0.08f,
+        targetValue = 0.94f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1450, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "chalk-progress"
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White.copy(alpha = 0.74f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF0F5F66),
+            shadowElevation = 14.dp
+        ) {
+            Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "Board2Note işliyor",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Spacer(Modifier.height(14.dp))
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(78.dp)
+                ) {
+                    drawRoundRect(
+                        color = Color(0xFF0B3D43),
+                        size = size,
+                        cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx())
+                    )
+                    val chalk = Color(0xFFEFFDF8)
+                    val width = (size.width * progress).coerceAtLeast(28f)
+                    drawLine(chalk, Offset(28f, size.height * 0.34f), Offset(width, size.height * 0.34f), strokeWidth = 5f)
+                    drawLine(chalk.copy(alpha = 0.78f), Offset(28f, size.height * 0.58f), Offset(width * 0.76f, size.height * 0.58f), strokeWidth = 4f)
+                    drawCircle(Color(0xFFF3B340), radius = 7.dp.toPx(), center = Offset(width, size.height * 0.77f))
+                }
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.84f),
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    }
+}
+
+private fun loadingMessage(state: Board2NotesUiState): String = when {
+    state.pendingScanNoteId != null -> "FastAPI Model 1 ve Model 2 çalışıyor; çıktı açık nota yerleştirilecek."
+    state.screen == com.board2notes.app.presentation.state.AppScreen.ImageReview -> "Görsel hazırlanıyor."
+    state.screen == com.board2notes.app.presentation.state.AppScreen.BoardDetection -> "Tahta alanı bulunuyor."
+    state.screen == com.board2notes.app.presentation.state.AppScreen.Enhancement -> "Model 2 görüntüyü iyileştiriyor."
+    state.screen == com.board2notes.app.presentation.state.AppScreen.Ocr -> "OCR metni çıkarılıyor."
+    else -> "İşlem devam ediyor."
 }
 
 @Composable
@@ -824,8 +1090,9 @@ private fun HomeScreen(
 
 @Composable
 private fun SamsungNoteCard(note: SavedNote, onClick: () -> Unit) {
-    val bitmap = remember(note.cropImagePath) {
-        note.cropImagePath?.let { path ->
+    val previewPath = note.previewImagePath()
+    val bitmap = remember(previewPath) {
+        previewPath?.let { path ->
             try {
                 val options = BitmapFactory.Options().apply {
                     inSampleSize = 4
@@ -877,6 +1144,20 @@ private fun SamsungNoteCard(note: SavedNote, onClick: () -> Unit) {
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (note.noteType == NoteType.Canvas) Color(0xFFEFF6FF) else Color(0xFFF8FAFC),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                ) {
+                    Text(
+                        text = if (note.noteType == NoteType.Canvas) "Canvas" else "Yazı",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    )
                 }
                 Text(
                     text = note.title.ifBlank { "Başlıksız Not" },
@@ -1340,6 +1621,209 @@ private fun CourseSelectorDialog(
 }
 
 @Composable
+private fun SamsungCaptureScreen(onPick: () -> Unit, onCamera: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .padding(horizontal = 20.dp)
+    ) {
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Tahtadan ekle",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Tahtayı fotoğraflayın veya galeriden seçin. Çıktı açık nota otomatik eklenecek.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            lineHeight = 20.sp
+        )
+        Spacer(Modifier.height(22.dp))
+        MinimalBoardMockCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        )
+        Spacer(Modifier.height(18.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            OutlinedButton(
+                onClick = onPick,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Galeriden seç")
+            }
+            Button(
+                onClick = onCamera,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Fotoğraf çek")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SamsungImageReviewScreen(
+    state: Board2NotesUiState,
+    viewModel: Board2NotesViewModel,
+    onContinue: () -> Unit
+) {
+    val addingToNote = state.pendingScanNoteId != null
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 18.dp)
+        ) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                if (addingToNote) "Tahtayı nota ekle" else "Görseli kontrol et",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (addingToNote) "Backend çıktısı bu açık nota eklenecek." else "Gerekirse döndür, sonra devam et.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(18.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                shape = RoundedCornerShape(22.dp),
+                color = Color(0xFFF8FAFC),
+                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(10.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    state.selectedImage?.let {
+                        Image(
+                            bitmap = it.asImageBitmap(),
+                            contentDescription = "Seçilen görüntü",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Fit
+                        )
+                    } ?: StatusBanner("Görüntü yükleniyor...", busy = true)
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+        }
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color.White,
+            shadowElevation = 8.dp,
+            tonalElevation = 0.dp
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { viewModel.rotateSelected(-90f) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(Icons.Default.Rotate90DegreesCcw, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Döndür")
+                }
+                Button(
+                    onClick = onContinue,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp),
+                    enabled = state.selectedImage != null,
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(if (addingToNote) Icons.Default.Add else Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (addingToNote) "Tahtayı ekle" else "Devam et")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MinimalBoardMockCard(modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = Color(0xFFF8FAFC),
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+            val boardLeft = size.width * 0.08f
+            val boardTop = size.height * 0.22f
+            val boardWidth = size.width * 0.84f
+            val boardHeight = size.height * 0.46f
+            drawRoundRect(
+                color = Color.White,
+                topLeft = Offset(boardLeft, boardTop),
+                size = Size(boardWidth, boardHeight),
+                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx())
+            )
+            drawRoundRect(
+                color = Color(0xFFCBD5E1),
+                topLeft = Offset(boardLeft, boardTop),
+                size = Size(boardWidth, boardHeight),
+                cornerRadius = CornerRadius(18.dp.toPx(), 18.dp.toPx()),
+                style = Stroke(width = 2.dp.toPx())
+            )
+            listOf(0.18f, 0.34f, 0.50f, 0.66f).forEachIndexed { index, y ->
+                val end = if (index % 2 == 0) 0.72f else 0.58f
+                drawLine(
+                    color = if (index == 0) Color(0xFF2563EB) else Color(0xFF0F172A),
+                    start = Offset(boardLeft + boardWidth * 0.16f, boardTop + boardHeight * y),
+                    end = Offset(boardLeft + boardWidth * end, boardTop + boardHeight * y),
+                    strokeWidth = 3.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
+            }
+            drawRoundRect(
+                color = Color(0xFF2563EB),
+                topLeft = Offset(boardLeft - 10.dp.toPx(), boardTop - 10.dp.toPx()),
+                size = Size(boardWidth + 20.dp.toPx(), boardHeight + 20.dp.toPx()),
+                cornerRadius = CornerRadius(24.dp.toPx(), 24.dp.toPx()),
+                style = Stroke(width = 2.dp.toPx())
+            )
+        }
+    }
+}
+
+@Composable
 private fun CaptureScreen(onPick: () -> Unit, onCamera: () -> Unit) {
     Column(
         modifier = Modifier
@@ -1448,6 +1932,7 @@ private fun CaptureScreen(onPick: () -> Unit, onCamera: () -> Unit) {
 
 @Composable
 private fun ImageReviewScreen(state: Board2NotesUiState, viewModel: Board2NotesViewModel, onContinue: () -> Unit) {
+    val addingToNote = state.pendingScanNoteId != null
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1461,7 +1946,10 @@ private fun ImageReviewScreen(state: Board2NotesUiState, viewModel: Board2NotesV
             Spacer(Modifier.height(16.dp))
             PipelineStepper(current = 0)
             Spacer(Modifier.height(16.dp))
-            SectionTitle("Görüntüyü kontrol et", "Gerekirse döndür, sonra devam et.")
+            SectionTitle(
+                "Görüntüyü kontrol et",
+                if (addingToNote) "Bu görüntü açık nota eklenecek." else "Gerekirse döndür, sonra devam et."
+            )
             Spacer(Modifier.height(16.dp))
             Surface(
                 modifier = Modifier
@@ -1521,9 +2009,9 @@ private fun ImageReviewScreen(state: Board2NotesUiState, viewModel: Board2NotesV
                     shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                Icon(Icons.Default.Check, contentDescription = null)
+                Icon(if (addingToNote) Icons.Default.Add else Icons.Default.Check, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text("Devam Et")
+                    Text(if (addingToNote) "Nota Ekle" else "Devam Et")
                 }
             }
         }
@@ -2159,10 +2647,44 @@ private fun deserializeDrawing(body: String): Pair<String, List<DrawingPath>> {
     return Pair(cleanBody, paths)
 }
 
+@Composable
+private fun DraggableCanvasToolbar(
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    Surface(
+        modifier = modifier
+            .offset { IntOffset(offset.x.roundToInt(), offset.y.roundToInt()) }
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress { change, dragAmount ->
+                    change.consume()
+                    offset = Offset(
+                        x = (offset.x + dragAmount.x).coerceIn(-220f, 220f),
+                        y = (offset.y + dragAmount.y).coerceIn(-80f, 140f)
+                    )
+                }
+            },
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+    ) {
+        content()
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesViewModel, onNotes: () -> Unit) {
+private fun NoteEditorScreen(
+    state: Board2NotesUiState,
+    viewModel: Board2NotesViewModel,
+    onScan: () -> Unit,
+    onNotes: () -> Unit
+) {
     val note = state.note ?: return
+    val savedNote = state.selectedSavedNote
+    val noteType = savedNote?.noteType ?: NoteType.Text
     val context = LocalContext.current
     var title by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.title) }
     var course by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.courseName) }
@@ -2183,9 +2705,14 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
     var showNewCourseDialog by remember { mutableStateOf(false) }
     var newCourseName by remember { mutableStateOf("") }
     
-    var selectedTab by remember { mutableIntStateOf(0) }
+    var selectedTab by remember(note.createdAtEpochMs, state.activeSavedNoteId, noteType) {
+        mutableIntStateOf(if (noteType == NoteType.Canvas) 1 else 0)
+    }
     var currentColor by remember { mutableStateOf(Color.Black) }
     var currentStrokeWidth by remember { mutableStateOf(5f) }
+    val canvasBitmap = remember(savedNote?.canvasImagePath) {
+        savedNote?.canvasImagePath?.let { BitmapFactory.decodeFile(it) }
+    }
 
     Column(
         modifier = Modifier
@@ -2239,6 +2766,21 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
+                Spacer(Modifier.width(10.dp))
+                FilledTonalButton(
+                    onClick = onScan,
+                    enabled = !state.isBusy,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(36.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Tara", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
             }
 
             androidx.compose.foundation.text.BasicTextField(
@@ -2281,14 +2823,19 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                listOf("Metin Notu" to Icons.Default.TextFields, "Çizim Canvası" to Icons.Default.Brush).forEachIndexed { index, pair ->
+                listOf("Yazı Notu" to Icons.Default.TextFields, "Canvas Notu" to Icons.Default.Brush).forEachIndexed { index, pair ->
                     val isSelected = selectedTab == index
+                    val isAllowed = (noteType == NoteType.Text && index == 0) || (noteType == NoteType.Canvas && index == 1)
                     Surface(
-                        onClick = { selectedTab = index },
+                        onClick = { if (isAllowed) selectedTab = index },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
                         color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                        contentColor = when {
+                            isSelected -> Color.White
+                            isAllowed -> MaterialTheme.colorScheme.onSurfaceVariant
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.42f)
+                        }
                     ) {
                         Row(
                             modifier = Modifier.padding(vertical = 8.dp),
@@ -2335,13 +2882,12 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                 )
             } else {
                 // Drawing Canvas Toolbar
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                DraggableCanvasToolbar {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                     listOf(
                         Color.Black to "black",
                         Color(0xFF3B82F6) to "blue",
@@ -2408,6 +2954,16 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                     ) {
                         Icon(Icons.Default.Delete, contentDescription = "Tümünü Sil", modifier = Modifier.size(18.dp))
                     }
+                    Button(
+                        onClick = onScan,
+                        enabled = !state.isBusy,
+                        modifier = Modifier.height(34.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Tara", modifier = Modifier.size(16.dp))
+                    }
+                    }
                 }
 
                 // Canvas sketching sheet
@@ -2421,52 +2977,62 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                 ) {
                     var currentPathPoints by remember { mutableStateOf(listOf<Offset>()) }
 
-                    Canvas(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .pointerInput(currentColor, currentStrokeWidth) {
-                                detectDragGestures(
-                                    onDragStart = { offset ->
-                                        currentPathPoints = currentPathPoints + offset
-                                    },
-                                    onDrag = { change, _ ->
-                                        change.consume()
-                                        currentPathPoints = currentPathPoints + change.position
-                                    },
-                                    onDragEnd = {
-                                        if (currentPathPoints.isNotEmpty()) {
-                                            canvasPaths = canvasPaths + DrawingPath(currentColor, currentStrokeWidth, currentPathPoints)
-                                            currentPathPoints = emptyList()
-                                            body = cleanText + serializeDrawing(canvasPaths)
-                                            viewModel.updateNote(title, body, course)
-                                        }
-                                    }
-                                )
-                            }
-                    ) {
-                        canvasPaths.forEach { path ->
-                            val composePath = Path().apply {
-                                path.points.forEachIndexed { index, offset ->
-                                    if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
-                                }
-                            }
-                            drawPath(
-                                path = composePath,
-                                color = path.color,
-                                style = Stroke(width = path.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    Box(Modifier.fillMaxSize()) {
+                        if (canvasBitmap != null) {
+                            Image(
+                                bitmap = canvasBitmap.asImageBitmap(),
+                                contentDescription = "Canvas sayfası",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit
                             )
                         }
-                        if (currentPathPoints.isNotEmpty()) {
-                            val composePath = Path().apply {
-                                currentPathPoints.forEachIndexed { index, offset ->
-                                    if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .pointerInput(currentColor, currentStrokeWidth) {
+                                    detectDragGestures(
+                                        onDragStart = { offset ->
+                                            currentPathPoints = currentPathPoints + offset
+                                        },
+                                        onDrag = { change, _ ->
+                                            change.consume()
+                                            currentPathPoints = currentPathPoints + change.position
+                                        },
+                                        onDragEnd = {
+                                            if (currentPathPoints.isNotEmpty()) {
+                                                canvasPaths = canvasPaths + DrawingPath(currentColor, currentStrokeWidth, currentPathPoints)
+                                                currentPathPoints = emptyList()
+                                                body = cleanText + serializeDrawing(canvasPaths)
+                                                viewModel.updateNote(title, body, course)
+                                            }
+                                        }
+                                    )
                                 }
+                        ) {
+                            canvasPaths.forEach { path ->
+                                val composePath = Path().apply {
+                                    path.points.forEachIndexed { index, offset ->
+                                        if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                                    }
+                                }
+                                drawPath(
+                                    path = composePath,
+                                    color = path.color,
+                                    style = Stroke(width = path.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                )
                             }
-                            drawPath(
-                                path = composePath,
-                                color = currentColor,
-                                style = Stroke(width = currentStrokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                            )
+                            if (currentPathPoints.isNotEmpty()) {
+                                val composePath = Path().apply {
+                                    currentPathPoints.forEachIndexed { index, offset ->
+                                        if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                                    }
+                                }
+                                drawPath(
+                                    path = composePath,
+                                    color = currentColor,
+                                    style = Stroke(width = currentStrokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                                )
+                            }
                         }
                     }
                 }
@@ -2642,6 +3208,434 @@ private fun NoteEditorScreen(state: Board2NotesUiState, viewModel: Board2NotesVi
                         Text("İptal")
                     }
                 }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SamsungStyleNoteEditorScreen(
+    state: Board2NotesUiState,
+    viewModel: Board2NotesViewModel,
+    onScan: () -> Unit,
+    onNotes: () -> Unit
+) {
+    val note = state.note ?: return
+    val savedNote = state.selectedSavedNote
+    val noteType = savedNote?.noteType ?: NoteType.Text
+    val context = LocalContext.current
+    var title by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.title) }
+    var course by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.courseName) }
+    val initialData = remember(note.createdAtEpochMs, state.activeSavedNoteId) { deserializeDrawing(note.body) }
+    var cleanText by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(initialData.first) }
+    var canvasPaths by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(initialData.second) }
+    var body by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.body) }
+    var currentColor by remember { mutableStateOf(Color.Black) }
+    var currentStrokeWidth by remember { mutableStateOf(5f) }
+    var currentPathPoints by remember { mutableStateOf(listOf<Offset>()) }
+    var showAddMenu by remember { mutableStateOf(false) }
+    var showMoreMenu by remember { mutableStateOf(false) }
+    var courseDropdownExpanded by remember { mutableStateOf(false) }
+    var showNewCourseDialog by remember { mutableStateOf(false) }
+    var newCourseName by remember { mutableStateOf("") }
+    var saveStatus by remember(state.activeSavedNoteId) { mutableStateOf("Kaydedildi") }
+    val canvasBitmap = remember(savedNote?.canvasImagePath) {
+        savedNote?.canvasImagePath?.let { BitmapFactory.decodeFile(it) }
+    }
+    val existingCourses = remember(state.savedNotes) {
+        state.savedNotes.map { it.courseName }.filter { it.isNotBlank() }.distinct().sorted()
+    }
+    val wordCount = remember(cleanText) {
+        cleanText.split("\\s+".toRegex()).count { it.isNotBlank() }
+    }
+
+    LaunchedEffect(title, course, body) {
+        saveStatus = "Kaydediliyor"
+        delay(700)
+        viewModel.updateNote(title, body, course)
+        viewModel.autoSaveCurrentNote()
+        saveStatus = "Kaydedildi"
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+    ) {
+        Surface(color = Color.White, tonalElevation = 0.dp, shadowElevation = 0.dp) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(64.dp)
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onNotes) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                }
+                androidx.compose.foundation.text.BasicTextField(
+                    value = title,
+                    onValueChange = { title = it.ifBlank { "" } },
+                    textStyle = MaterialTheme.typography.titleLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { inner ->
+                        if (title.isBlank()) {
+                            Text(
+                                "Başlık",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                            )
+                        }
+                        inner()
+                    }
+                )
+                Text(
+                    saveStatus,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 6.dp)
+                )
+                Box {
+                    IconButton(onClick = { showAddMenu = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "Ekle")
+                    }
+                    DropdownMenu(expanded = showAddMenu, onDismissRequest = { showAddMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Tahtadan ekle") },
+                            leadingIcon = { Icon(Icons.Default.CameraAlt, contentDescription = null) },
+                            onClick = {
+                                showAddMenu = false
+                                viewModel.updateNote(title, body, course)
+                                viewModel.autoSaveCurrentNote()
+                                onScan()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Görsel ekle") },
+                            leadingIcon = { Icon(Icons.Default.Image, contentDescription = null) },
+                            enabled = false,
+                            onClick = {}
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Dosya ekle") },
+                            leadingIcon = { Icon(Icons.Default.Description, contentDescription = null) },
+                            enabled = false,
+                            onClick = {}
+                        )
+                    }
+                }
+                Box {
+                    IconButton(onClick = { showMoreMenu = true }) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Daha fazla")
+                    }
+                    DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Kaydet ve notlara dön") },
+                            leadingIcon = { Icon(Icons.Default.Save, contentDescription = null) },
+                            onClick = {
+                                showMoreMenu = false
+                                viewModel.updateNote(title, body, course)
+                                viewModel.saveCurrentNote(onNotes)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Kopyala") },
+                            leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                            onClick = {
+                                showMoreMenu = false
+                                copyNote(context, state.note ?: note)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Paylaş") },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                            onClick = {
+                                showMoreMenu = false
+                                shareNote(context, state.note ?: note)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = Color(0xFFF1F5F9),
+                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                modifier = Modifier.clickable { courseDropdownExpanded = true }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        course.ifBlank { "Genel" },
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Surface(shape = RoundedCornerShape(999.dp), color = Color(0xFFEFF6FF)) {
+                Text(
+                    if (noteType == NoteType.Canvas) "Canvas" else "Yazı",
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            if (noteType == NoteType.Text) {
+                Text(
+                    "$wordCount kelime",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (noteType == NoteType.Text) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 22.dp, vertical = 8.dp)
+            ) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = cleanText,
+                    onValueChange = {
+                        cleanText = it
+                        body = cleanText + serializeDrawing(canvasPaths)
+                        viewModel.updateNote(title, body, course)
+                    },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        fontSize = 17.sp,
+                        lineHeight = 27.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.fillMaxSize(),
+                    decorationBox = { inner ->
+                        if (cleanText.isBlank()) {
+                            Text(
+                                "Not yazmaya başlayın...",
+                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                            )
+                        }
+                        inner()
+                    }
+                )
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .background(Color.White)
+            ) {
+                if (canvasBitmap != null) {
+                    Image(
+                        bitmap = canvasBitmap.asImageBitmap(),
+                        contentDescription = "Canvas sayfası",
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 18.dp, vertical = 12.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 18.dp, vertical = 12.dp)
+                        .pointerInput(currentColor, currentStrokeWidth) {
+                            detectDragGestures(
+                                onDragStart = { offset -> currentPathPoints = currentPathPoints + offset },
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    currentPathPoints = currentPathPoints + change.position
+                                },
+                                onDragEnd = {
+                                    if (currentPathPoints.isNotEmpty()) {
+                                        canvasPaths = canvasPaths + DrawingPath(currentColor, currentStrokeWidth, currentPathPoints)
+                                        currentPathPoints = emptyList()
+                                        body = cleanText + serializeDrawing(canvasPaths)
+                                        viewModel.updateNote(title, body, course)
+                                    }
+                                }
+                            )
+                        }
+                ) {
+                    canvasPaths.forEach { path ->
+                        val composePath = Path().apply {
+                            path.points.forEachIndexed { index, offset ->
+                                if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                            }
+                        }
+                        drawPath(
+                            path = composePath,
+                            color = path.color,
+                            style = Stroke(width = path.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                        )
+                    }
+                    if (currentPathPoints.isNotEmpty()) {
+                        val composePath = Path().apply {
+                            currentPathPoints.forEachIndexed { index, offset ->
+                                if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                            }
+                        }
+                        drawPath(
+                            path = composePath,
+                            color = currentColor,
+                            style = Stroke(width = currentStrokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                        )
+                    }
+                }
+                DraggableCanvasToolbar(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CanvasToolIconButton(Icons.Default.Brush, selected = true) {}
+                        listOf(
+                            Color.Black,
+                            Color(0xFF2563EB),
+                            Color(0xFFF59E0B),
+                            Color(0xFFEF4444)
+                        ).forEach { color ->
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(
+                                        width = if (currentColor == color) 3.dp else 1.dp,
+                                        color = if (currentColor == color) MaterialTheme.colorScheme.primary else Color(0xFFE2E8F0),
+                                        shape = CircleShape
+                                    )
+                                    .clickable { currentColor = color }
+                            )
+                        }
+                        CanvasToolIconButton(Icons.Default.Palette, selected = currentStrokeWidth > 10f) {
+                            currentStrokeWidth = if (currentStrokeWidth == 5f) 12f else if (currentStrokeWidth == 12f) 22f else 5f
+                        }
+                        CanvasToolIconButton(Icons.Default.Undo, selected = false) {
+                            if (canvasPaths.isNotEmpty()) {
+                                canvasPaths = canvasPaths.dropLast(1)
+                                body = cleanText + serializeDrawing(canvasPaths)
+                                viewModel.updateNote(title, body, course)
+                            }
+                        }
+                        CanvasToolIconButton(Icons.Default.Delete, selected = false) {
+                            canvasPaths = emptyList()
+                            body = cleanText + serializeDrawing(canvasPaths)
+                            viewModel.updateNote(title, body, course)
+                        }
+                    }
+                }
+                Text(
+                    "1/1",
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(20.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+
+    if (courseDropdownExpanded) {
+        CourseSelectorDialog(
+            currentCourse = course,
+            existingCourses = existingCourses,
+            onSelect = { selectedCourseName ->
+                course = selectedCourseName
+                viewModel.updateNote(title, body, selectedCourseName)
+                courseDropdownExpanded = false
+            },
+            onAddNewCourse = {
+                showNewCourseDialog = true
+                courseDropdownExpanded = false
+            },
+            onDismiss = { courseDropdownExpanded = false }
+        )
+    }
+
+    if (showNewCourseDialog) {
+        AlertDialog(
+            onDismissRequest = { showNewCourseDialog = false },
+            title = { Text("Yeni ders") },
+            text = {
+                OutlinedTextField(
+                    value = newCourseName,
+                    onValueChange = { newCourseName = it },
+                    label = { Text("Ders adı") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newCourseName.isNotBlank()) {
+                            course = newCourseName.trim()
+                            viewModel.updateNote(title, body, course)
+                        }
+                        showNewCourseDialog = false
+                        newCourseName = ""
+                    }
+                ) {
+                    Text("Ekle")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewCourseDialog = false }) {
+                    Text("Vazgeç")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun CanvasToolIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = if (selected) Color(0xFFEFF6FF) else Color.Transparent,
+        modifier = Modifier.size(38.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(21.dp)
             )
         }
     }
@@ -2831,7 +3825,7 @@ private fun NotesScreen(
                                 CourseFolderCard(
                                     courseName = course,
                                     noteCount = notes.size,
-                                    thumbnailPath = notes.firstOrNull { it.whitePageImagePath != null }?.whitePageImagePath,
+                                    thumbnailPath = notes.firstNotNullOfOrNull { it.previewImagePath() },
                                     onClick = { onFolderOpen(course) },
                                     modifier = Modifier.weight(1f)
                                 )
@@ -2921,7 +3915,7 @@ private fun NoteListCard(note: SavedNote, onClick: () -> Unit) {
         tonalElevation = 2.dp
     ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            FileThumbnail(note.whitePageImagePath)
+            FileThumbnail(note.previewImagePath())
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(note.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -3071,7 +4065,8 @@ private fun NoteDetailScreen(
         Spacer(Modifier.height(16.dp))
 
         // Image View (Processed Whiteboard Image)
-        val bitmap = remember(note.whitePageImagePath) { note.whitePageImagePath?.let { BitmapFactory.decodeFile(it) } }
+        val previewPath = note.previewImagePath()
+        val bitmap = remember(previewPath) { previewPath?.let { BitmapFactory.decodeFile(it) } }
         if (bitmap != null) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -3356,6 +4351,154 @@ private fun ArchiveNoteCard(
 }
 
 @Composable
+private fun SamsungSettingsScreen(
+    state: Board2NotesUiState,
+    viewModel: Board2NotesViewModel,
+    onAbout: () -> Unit
+) {
+    ScreenColumn {
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Ayarlar",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(14.dp))
+
+        SamsungSettingsSection("Görünüm") {
+            SettingInfoRow(Icons.Default.AutoAwesome, "Tema", "Beyaz Board2Note teması")
+            SettingInfoRow(Icons.Default.Language, "Dil", "Türkçe")
+            SettingSwitchRow(
+                Icons.Default.Menu,
+                "Alt gezinme çubuğu",
+                "Samsung Notes tarzı için varsayılan kapalı",
+                state.settings.showBottomNavigation,
+                viewModel::setShowBottomNavigation
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        SamsungSettingsSection("Notlar") {
+            SettingInfoRow(Icons.Default.Description, "Varsayılan kayıt", "Otomatik kaydetme açık")
+            SettingInfoRow(Icons.Default.Folder, "Arşiv", "${state.archivedNotes.size} not arşivde")
+            SettingSwitchRow(
+                Icons.Default.AutoAwesome,
+                "LLM ile düzenleme",
+                "Not oluşturma tercihleri",
+                state.settings.llmEnabled,
+                viewModel::setLlmEnabled
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Model 2 önceliği",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ModeButton("OCR", state.settings.enhancementMode == EnhancementMode.Ocr, Modifier.weight(1f)) {
+                    viewModel.setEnhancementMode(EnhancementMode.Ocr)
+                }
+                ModeButton("Beyaz sayfa", state.settings.enhancementMode == EnhancementMode.VisualNote, Modifier.weight(1f)) {
+                    viewModel.setEnhancementMode(EnhancementMode.VisualNote)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Tahta hassasiyeti: ${"%.2f".format(state.settings.threshold)}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(state.settings.threshold, viewModel::setThreshold, valueRange = 0.45f..0.60f)
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        SamsungSettingsSection("Backend") {
+            SettingSwitchRow(
+                Icons.Default.AutoAwesome,
+                "FastAPI pipeline",
+                "Tahtadan ekle akışında backend kullanılır",
+                state.settings.useBackendPipeline,
+                viewModel::setUseBackendPipeline
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                ModeButton("ADB tüneli", state.settings.backendBaseUrl == ADB_REVERSE_BACKEND_BASE_URL, Modifier.weight(1f)) {
+                    viewModel.setBackendBaseUrl(ADB_REVERSE_BACKEND_BASE_URL)
+                }
+                ModeButton("Wi-Fi IP", state.settings.backendBaseUrl == LAN_BACKEND_BASE_URL, Modifier.weight(1f)) {
+                    viewModel.setBackendBaseUrl(LAN_BACKEND_BASE_URL)
+                }
+                ModeButton("Emulator", state.settings.backendBaseUrl == EMULATOR_BACKEND_BASE_URL, Modifier.weight(1f)) {
+                    viewModel.setBackendBaseUrl(EMULATOR_BACKEND_BASE_URL)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = state.settings.backendBaseUrl,
+                onValueChange = viewModel::setBackendBaseUrl,
+                label = { Text("FastAPI base URL") },
+                supportingText = { Text("ADB: $ADB_REVERSE_BACKEND_BASE_URL | Wi-Fi: $LAN_BACKEND_BASE_URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        SamsungSettingsSection("Geliştirici") {
+            SettingSwitchRow(Icons.Default.BugReport, "Debug modu", "Pipeline çıktıları ve tanılama", state.settings.debugMode, viewModel::setDebugMode)
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = state.settings.groqApiKey,
+                onValueChange = viewModel::setGroqApiKey,
+                label = { Text("Groq API anahtarı") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+            Spacer(Modifier.height(10.dp))
+            Text("OCR motoru", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            OcrEngineChoice.entries.forEach { choice ->
+                TextButton(onClick = { viewModel.setOcrEngineChoice(choice) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (state.settings.ocrEngineChoice == choice) "✓ ${choice.name}" else choice.name)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        SamsungSettingsSection("Hakkında") {
+            SettingActionRow(Icons.Default.Info, "Uygulama bilgisi", "Sürüm ve proje bilgileri", onAbout)
+            SettingInfoRow(Icons.Default.Description, "Sürüm", "0.9.0")
+        }
+        Spacer(Modifier.height(22.dp))
+    }
+}
+
+@Composable
+private fun SamsungSettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = Color.White,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+        tonalElevation = 0.dp
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Spacer(Modifier.height(10.dp))
+            content()
+        }
+    }
+}
+
+@Composable
 private fun SettingsScreen(state: Board2NotesUiState, viewModel: Board2NotesViewModel, onAbout: () -> Unit) {
     ScreenColumn {
         Spacer(Modifier.height(18.dp))
@@ -3402,6 +4545,49 @@ private fun SettingsScreen(state: Board2NotesUiState, viewModel: Board2NotesView
 
         Spacer(Modifier.height(16.dp))
 
+        SettingsSection(title = "Backend API") {
+            SettingSwitchRow(
+                Icons.Default.AutoAwesome,
+                "FastAPI pipeline",
+                "Not içinden yapılan taramalarda PyTorch backend kullanılır",
+                state.settings.useBackendPipeline,
+                viewModel::setUseBackendPipeline
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = state.settings.backendBaseUrl,
+                onValueChange = viewModel::setBackendBaseUrl,
+                label = { Text("FastAPI base URL") },
+                supportingText = { Text("Kablosuz ADB: $ADB_REVERSE_BACKEND_BASE_URL  |  Wi-Fi: $LAN_BACKEND_BASE_URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp)
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                ModeButton(
+                    "ADB tüneli",
+                    state.settings.backendBaseUrl == DEFAULT_BACKEND_BASE_URL,
+                    Modifier.weight(1f)
+                ) {
+                    viewModel.setBackendBaseUrl(DEFAULT_BACKEND_BASE_URL)
+                }
+                ModeButton(
+                    "Wi-Fi IP",
+                    state.settings.backendBaseUrl == LAN_BACKEND_BASE_URL,
+                    Modifier.weight(1f)
+                ) {
+                    viewModel.setBackendBaseUrl(LAN_BACKEND_BASE_URL)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { viewModel.setBackendBaseUrl(EMULATOR_BACKEND_BASE_URL) }) {
+                Text(if (state.settings.backendBaseUrl == EMULATOR_BACKEND_BASE_URL) "✓ Emulator: $EMULATOR_BACKEND_BASE_URL" else "Emulator: $EMULATOR_BACKEND_BASE_URL")
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
         SettingsSection(title = "Geliştirici ve OCR") {
             SettingSwitchRow(Icons.Default.BugReport, "Debug modu", "Pipeline çıktıları ve tanılama dosyaları", state.settings.debugMode, viewModel::setDebugMode)
             Spacer(Modifier.height(12.dp))
@@ -3432,7 +4618,7 @@ private fun SettingsScreen(state: Board2NotesUiState, viewModel: Board2NotesView
 
         SettingsSection(title = "Hakkında") {
             SettingActionRow(Icons.Default.Info, "Uygulama bilgisi", "Sürüm ve proje bilgileri", onAbout)
-            SettingInfoRow(Icons.Default.Description, "Sürüm bilgisi", "0.1.0 ürün prototipi")
+            SettingInfoRow(Icons.Default.Description, "Sürüm bilgisi", "0.9.0 ürün sürümü")
             SettingInfoRow(Icons.Default.Folder, "Proje bilgileri", "Board2Note yapay zekâ destekli not uygulaması")
         }
 
@@ -3724,18 +4910,14 @@ private fun B2NoteLogo(compact: Boolean, modifier: Modifier = Modifier) {
 
 @Composable
 private fun HeaderLogoMark(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier.size(32.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.primary
-    ) {
-        Canvas(modifier = Modifier.fillMaxSize().padding(7.dp)) {
-            drawRoundRect(Color.White, topLeft = Offset(size.width * 0.12f, size.height * 0.08f), size = Size(size.width * 0.72f, size.height * 0.72f))
-            drawLine(Color(0xFF0F172A), Offset(size.width * 0.28f, size.height * 0.34f), Offset(size.width * 0.72f, size.height * 0.34f), strokeWidth = 3f)
-            drawLine(Color(0xFF0F172A), Offset(size.width * 0.28f, size.height * 0.52f), Offset(size.width * 0.62f, size.height * 0.52f), strokeWidth = 3f)
-            drawLine(Color(0xFF60A5FA), Offset(size.width * 0.54f, size.height * 0.72f), Offset(size.width * 0.88f, size.height * 0.96f), strokeWidth = 5f)
-        }
-    }
+    Image(
+        painter = painterResource(id = R.drawable.b2n_appbar),
+        contentDescription = "Board2Note",
+        contentScale = ContentScale.Fit,
+        modifier = modifier
+            .width(116.dp)
+            .height(42.dp)
+    )
 }
 
 @Composable
@@ -3809,7 +4991,7 @@ private fun SavedNoteRow(note: SavedNote, onClick: () -> Unit) {
         tonalElevation = 1.dp
     ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            FileThumbnail(note.whitePageImagePath)
+            FileThumbnail(note.previewImagePath())
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(note.title, fontWeight = FontWeight.SemiBold)
@@ -4437,8 +5619,9 @@ private fun NoteGridCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val bitmap = remember(note.whitePageImagePath) {
-        note.whitePageImagePath?.let { BitmapFactory.decodeFile(it) }
+    val previewPath = note.previewImagePath()
+    val bitmap = remember(previewPath) {
+        previewPath?.let { BitmapFactory.decodeFile(it) }
     }
     Surface(
         modifier = modifier.clickable(onClick = onClick),
@@ -4585,6 +5768,13 @@ private fun SavedNote.toShareText(): String = buildString {
     appendLine()
     append(body)
 }
+
+private fun SavedNote.previewImagePath(): String? =
+    if (noteType == NoteType.Canvas) {
+        canvasImagePath ?: whitePageImagePath ?: cropImagePath
+    } else {
+        whitePageImagePath ?: cropImagePath
+    }
 
 private fun formatDate(epochMs: Long): String =
     SimpleDateFormat("dd MMM yyyy HH:mm", Locale("tr", "TR")).format(Date(epochMs))

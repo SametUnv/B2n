@@ -20,9 +20,15 @@ class SettingsRepository(private val context: Context) {
         val ocrEngine = stringPreferencesKey("ocr_engine")
         val groqApiKey = stringPreferencesKey("groq_api_key")
         val llmEnabled = booleanPreferencesKey("llm_enabled")
+        val backendBaseUrl = stringPreferencesKey("backend_base_url")
+        val backendDeviceMigration = booleanPreferencesKey("backend_device_migration_20260530")
+        val backendAdbReverseMigration = booleanPreferencesKey("backend_adb_reverse_migration_20260530")
+        val useBackendPipeline = booleanPreferencesKey("use_backend_pipeline")
+        val showBottomNavigation = booleanPreferencesKey("show_bottom_navigation")
     }
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
+        val storedBackendBaseUrl = prefs[Keys.backendBaseUrl]?.trim().orEmpty()
         AppSettings(
             threshold = prefs[Keys.threshold] ?: 0.5f,
             debugMode = prefs[Keys.debugMode] ?: false,
@@ -31,8 +37,30 @@ class SettingsRepository(private val context: Context) {
             ocrEngineChoice = prefs[Keys.ocrEngine]?.let { runCatching { OcrEngineChoice.valueOf(it) }.getOrNull() }
                 ?: OcrEngineChoice.MlKitLatin,
             groqApiKey = prefs[Keys.groqApiKey] ?: "",
-            llmEnabled = prefs[Keys.llmEnabled] ?: false
+            llmEnabled = prefs[Keys.llmEnabled] ?: false,
+            backendBaseUrl = storedBackendBaseUrl.ifBlank { DEFAULT_BACKEND_BASE_URL },
+            useBackendPipeline = prefs[Keys.useBackendPipeline] ?: true,
+            showBottomNavigation = prefs[Keys.showBottomNavigation] ?: false
         )
+    }
+
+    suspend fun migrateBackendBaseUrlForPhysicalDevice() {
+        context.settingsDataStore.edit { prefs ->
+            if (prefs[Keys.backendDeviceMigration] == true) return@edit
+            val current = prefs[Keys.backendBaseUrl]?.trim()
+            if (current.isNullOrBlank() || current == EMULATOR_BACKEND_BASE_URL) {
+                prefs[Keys.backendBaseUrl] = DEFAULT_BACKEND_BASE_URL
+            }
+            prefs[Keys.backendDeviceMigration] = true
+        }
+        context.settingsDataStore.edit { prefs ->
+            if (prefs[Keys.backendAdbReverseMigration] == true) return@edit
+            val current = prefs[Keys.backendBaseUrl]?.trim()
+            if (current.isNullOrBlank() || current == EMULATOR_BACKEND_BASE_URL || current == LAN_BACKEND_BASE_URL) {
+                prefs[Keys.backendBaseUrl] = ADB_REVERSE_BACKEND_BASE_URL
+            }
+            prefs[Keys.backendAdbReverseMigration] = true
+        }
     }
 
     suspend fun setThreshold(value: Float) {
@@ -57,5 +85,17 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setLlmEnabled(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.llmEnabled] = value }
+    }
+
+    suspend fun setBackendBaseUrl(value: String) {
+        context.settingsDataStore.edit { it[Keys.backendBaseUrl] = value.trim() }
+    }
+
+    suspend fun setUseBackendPipeline(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.useBackendPipeline] = value }
+    }
+
+    suspend fun setShowBottomNavigation(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.showBottomNavigation] = value }
     }
 }

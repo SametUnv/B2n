@@ -1,6 +1,7 @@
 package com.board2notes.app
 
 import android.app.Application
+import com.board2notes.app.data.backend.BackendBoard2NotesClient
 import com.board2notes.app.data.image.DebugArtifactWriter
 import com.board2notes.app.data.ml.OnnxBoardEnhancementEngine
 import com.board2notes.app.data.ml.OnnxBoardSegmentationEngine
@@ -34,6 +35,7 @@ class AppContainer(application: Application) {
     val modelManifestReader: ModelManifestReader = ModelManifestReader(application)
     val settingsRepository: SettingsRepository = SettingsRepository(application)
     val debugArtifactWriter: DebugArtifactWriter = DebugArtifactWriter(application)
+    val backendClient: BackendBoard2NotesClient = BackendBoard2NotesClient()
     val noteRepository: NoteRepository = FileNoteRepository(application.filesDir)
     val segmentationEngine: BoardSegmentationEngine = SafeBoardSegmentationEngine(
         OnnxBoardSegmentationEngine(modelAssetManager)

@@ -5,6 +5,7 @@ import com.board2notes.app.data.settings.AppSettings
 import com.board2notes.app.domain.model.BoardDetectionResult
 import com.board2notes.app.domain.model.EnhancementResult
 import com.board2notes.app.domain.model.FormattedNote
+import com.board2notes.app.domain.model.NoteType
 import com.board2notes.app.domain.model.OcrResult
 import com.board2notes.app.domain.model.Quad
 import com.board2notes.app.domain.model.SavedNote
@@ -42,5 +43,7 @@ data class Board2NotesUiState(
     val pipelineState: PipelineState = PipelineState.Idle,
     val isBusy: Boolean = false,
     val userMessage: String? = null,
-    val debugFiles: List<File> = emptyList()
+    val debugFiles: List<File> = emptyList(),
+    val pendingScanNoteId: String? = null,
+    val pendingScanNoteType: NoteType? = null
 )

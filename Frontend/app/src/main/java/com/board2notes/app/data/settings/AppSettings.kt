@@ -9,11 +9,19 @@ enum class OcrEngineChoice {
     Paddle
 }
 
+const val LAN_BACKEND_BASE_URL = "http://192.168.1.9:8000"
+const val ADB_REVERSE_BACKEND_BASE_URL = "http://127.0.0.1:8000"
+const val DEFAULT_BACKEND_BASE_URL = ADB_REVERSE_BACKEND_BASE_URL
+const val EMULATOR_BACKEND_BASE_URL = "http://10.0.2.2:8000"
+
 data class AppSettings(
     val threshold: Float = 0.5f,
     val debugMode: Boolean = false,
     val enhancementMode: EnhancementMode = EnhancementMode.Ocr,
     val ocrEngineChoice: OcrEngineChoice = OcrEngineChoice.MlKitLatin,
     val groqApiKey: String = "",
-    val llmEnabled: Boolean = false
+    val llmEnabled: Boolean = false,
+    val backendBaseUrl: String = DEFAULT_BACKEND_BASE_URL,
+    val useBackendPipeline: Boolean = true,
+    val showBottomNavigation: Boolean = false
 )

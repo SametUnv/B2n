@@ -1,6 +1,7 @@
 package com.board2notes.app.data.notes
 
 import com.board2notes.app.domain.model.FormattedNote
+import com.board2notes.app.domain.model.NoteType
 import com.board2notes.app.domain.model.OcrResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -31,7 +32,9 @@ class FileNoteRepositoryTest {
                     ),
                     cropBitmap = null,
                     ocrBitmap = null,
-                    whitePageBitmap = null
+                    whitePageBitmap = null,
+                    noteType = NoteType.Text,
+                    canvasBitmap = null
                 )
             }
 
@@ -80,7 +83,24 @@ class FileNoteRepositoryTest {
             val repository = FileNoteRepository(root)
             kotlinx.coroutines.runBlocking {
                 assertEquals(listOf("legacy"), repository.listNotes().map { it.id })
+                assertEquals(NoteType.Text, repository.getNote("legacy")?.noteType)
                 assertTrue(repository.listArchivedNotes().isEmpty())
+            }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun repositoryCreatesBlankTextNotes() {
+        val root = createTempRoot()
+        try {
+            val repository = FileNoteRepository(root)
+            kotlinx.coroutines.runBlocking {
+                val saved = repository.createBlank(NoteType.Text)
+                assertEquals(NoteType.Text, saved.noteType)
+                assertTrue(saved.title.contains("Yazı"))
+                assertEquals(listOf(saved.id), repository.listNotes().map { it.id })
             }
         } finally {
             root.deleteRecursively()

@@ -8,7 +8,7 @@
 
     <style name="Theme.B2Note.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">#F7F8FA</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/b2n_logo</item>
         <item name="postSplashScreenTheme">@style/Theme.B2Note</item>
     </style>
 

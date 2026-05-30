@@ -25,3 +25,4 @@ Frontend/app/src/main/assets/models/**/*.onnx
 Models/TTM-V2/
 Models/YGM 4. Model B2N Nafnet/final_model.pt
 Models/YGM 4. Model B2N Nafnet/TestOutput.png
+Board2Note_Backend_Models.zip
