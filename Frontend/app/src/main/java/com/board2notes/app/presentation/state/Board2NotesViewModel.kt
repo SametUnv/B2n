@@ -94,7 +94,7 @@ class Board2NotesViewModel(
                     userMessage = null
                 )
             }.onFailure { error ->
-                fail("Goruntu okunamadi: ${error.message}", error)
+                fail("Görüntü okunamadı: ${error.message}", error)
             }
         }
     }
@@ -165,17 +165,17 @@ class Board2NotesViewModel(
                 val updated = detection.copy(
                     cropBitmap = corrected,
                     quad = quad,
-                    warnings = detection.warnings + "Elle duzeltilmis kirpma uygulandi."
+                    warnings = detection.warnings + "Elle düzeltilmiş kırpma uygulandı."
                 )
                 _uiState.value = _uiState.value.copy(
                     boardDetection = updated,
                     manualQuad = quad,
                     pipelineState = PipelineState.BoardDetected(updated),
                     isBusy = false,
-                    userMessage = "Elle duzeltilmis kirpma hazir."
+                    userMessage = "Elle düzeltilmiş kırpma hazır"
                 )
             }.onFailure { error ->
-                fail("Elle duzeltme uygulanamadi: ${error.message}", error)
+                fail("Elle düzeltme uygulanamadı: ${error.message}", error)
             }
         }
     }
@@ -195,7 +195,7 @@ class Board2NotesViewModel(
                     userMessage = result.warnings.firstOrNull()
                 )
             }.onFailure { error ->
-                fail("Goruntu iyilestirilemedi: ${error.message}", error)
+                fail("Görüntü iyileştirilemedi: ${error.message}", error)
             }
         }
     }
@@ -242,7 +242,7 @@ class Board2NotesViewModel(
                     userMessage = ocr.warnings.firstOrNull() ?: "Not kaydedildi."
                 )
             }.onFailure { error ->
-                fail("OCR calistirilamadi: ${error.message}", error)
+                fail("OCR çalıştırılamadı: ${error.message}", error)
             }
         }
     }
@@ -275,7 +275,7 @@ class Board2NotesViewModel(
                     isBusy = false
                 )
             }.onFailure { error ->
-                fail("Not olusturulamadi: ${error.message}", error)
+                fail("Not oluşturulamadı: ${error.message}", error)
             }
         }
     }
@@ -321,7 +321,7 @@ class Board2NotesViewModel(
         viewModelScope.launch {
             val saved = container.noteRepository.getNote(id)
             if (saved == null) {
-                _uiState.value = _uiState.value.copy(userMessage = "Not bulunamadi.")
+                _uiState.value = _uiState.value.copy(userMessage = "Not bulunamadı.")
                 return@launch
             }
             _uiState.value = _uiState.value.copy(
@@ -353,6 +353,22 @@ class Board2NotesViewModel(
         }
     }
 
+    fun deleteNotes(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                ids.forEach { id -> container.noteRepository.deleteNote(id) }
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    savedNotes = loadNotesSafely(),
+                    userMessage = "${ids.size} not silindi."
+                )
+            }.onFailure { error ->
+                fail("Notlar silinemedi: ${error.message}", error)
+            }
+        }
+    }
+
     fun exportDebugArtifacts() {
         val note = _uiState.value.note
         val ocr = _uiState.value.ocrResult
@@ -363,10 +379,10 @@ class Board2NotesViewModel(
             }.onSuccess { files ->
                 _uiState.value = _uiState.value.copy(
                     debugFiles = files,
-                    userMessage = "${files.size} debug ciktisi kaydedildi."
+                    userMessage = "${files.size} debug çıktısı kaydedildi."
                 )
             }.onFailure { error ->
-                fail("Debug ciktilari kaydedilemedi: ${error.message}", error)
+                fail("Debug çıktıları kaydedilemedi: ${error.message}", error)
             }
         }
     }
