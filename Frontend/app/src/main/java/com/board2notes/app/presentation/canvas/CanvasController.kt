@@ -7,9 +7,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import java.util.UUID
 import kotlin.math.max
 
-enum class CanvasTool { Pen, Eraser, Select }
+enum class CanvasTool { Pen, Eraser, Select, Pan }
 
 /**
  * Canvas editörünün tüm durumunu tutan, recomposition'lar arası yaşayan denetleyici.
@@ -154,30 +155,86 @@ class CanvasController(
 
     // --- Silgi oturumu (tek undo adımı, canlı silme) ---
 
-    private var eraseOriginalPage: CanvasPage? = null
-    private val erasedIds = mutableSetOf<String>()
+    private var hasEraseChanges = false
 
     fun beginErase() {
         pushUndo()
-        eraseOriginalPage = currentPage()
-        erasedIds.clear()
+        hasEraseChanges = false
     }
 
     fun eraseStrokesAt(point: Offset, radius: Float) {
-        val original = eraseOriginalPage ?: return
+        val original = currentPage()
         var changed = false
+        val newPage = mutableListOf<CanvasElement>()
+        
         original.forEach { element ->
-            if (element is StrokeElement && element.id !in erasedIds && strokeTouched(element, point, radius)) {
-                erasedIds.add(element.id); changed = true
+            if (element is StrokeElement) {
+                val subStrokes = eraseStroke(element, point, radius)
+                if (subStrokes.size != 1 || subStrokes[0].points.size != element.points.size) {
+                    newPage.addAll(subStrokes)
+                    changed = true
+                } else {
+                    newPage.add(element)
+                }
+            } else {
+                newPage.add(element)
             }
         }
-        if (changed) replaceCurrentPageNoUndo(original.filterNot { it.id in erasedIds })
+        
+        if (changed) {
+            replaceCurrentPageNoUndo(newPage)
+            hasEraseChanges = true
+        }
     }
 
     fun endErase() {
-        if (eraseOriginalPage == null) return
-        eraseOriginalPage = null
-        if (erasedIds.isNotEmpty()) onChange(pages)
+        if (hasEraseChanges) {
+            onChange(pages)
+        }
+    }
+
+    private fun eraseStroke(stroke: StrokeElement, center: Offset, radius: Float): List<StrokeElement> {
+        val r2 = radius * radius
+        val subStrokes = mutableListOf<StrokeElement>()
+        val currentPoints = mutableListOf<Offset>()
+        val currentPressures = mutableListOf<Float>()
+        
+        for (i in stroke.points.indices) {
+            val pt = stroke.points[i]
+            val pressure = stroke.pressures.getOrNull(i) ?: 1f
+            val isTouched = (pt - center).getDistanceSquared() <= r2
+            
+            if (isTouched) {
+                if (currentPoints.isNotEmpty()) {
+                    subStrokes.add(
+                        stroke.copy(
+                            id = UUID.randomUUID().toString(),
+                            points = currentPoints.toList(),
+                            pressures = if (stroke.pressures.isNotEmpty()) currentPressures.toList() else emptyList()
+                        )
+                    )
+                    currentPoints.clear()
+                    currentPressures.clear()
+                }
+            } else {
+                currentPoints.add(pt)
+                if (stroke.pressures.isNotEmpty()) {
+                    currentPressures.add(pressure)
+                }
+            }
+        }
+        
+        if (currentPoints.isNotEmpty()) {
+            subStrokes.add(
+                stroke.copy(
+                    id = UUID.randomUUID().toString(),
+                    points = currentPoints.toList(),
+                    pressures = if (stroke.pressures.isNotEmpty()) currentPressures.toList() else emptyList()
+                )
+            )
+        }
+        
+        return subStrokes
     }
 
     fun deleteSelection() {

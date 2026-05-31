@@ -15,7 +15,7 @@ data class ModelManifestEntry(
 
 class ModelManifestReader(private val context: Context) {
     fun read(): List<ModelManifestEntry> {
-        val json = context.assets.open("models/model_manifest.json").bufferedReader().use { it.readText() }
+        val json = context.assets.open("models/model_manifest.json").bufferedReader(Charsets.UTF_8).use { it.readText() }
         val root = JSONObject(json)
         val models = root.getJSONArray("models")
         return List(models.length()) { index ->

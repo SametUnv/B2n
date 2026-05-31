@@ -91,9 +91,9 @@ class BackendBoard2NotesClient {
 
         val status = connection.responseCode
         val body = if (status in 200..299) {
-            connection.inputStream.bufferedReader().use { it.readText() }
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } else {
-            connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
         }
         connection.disconnect()
         if (status !in 200..299) {
