@@ -1,11 +1,18 @@
 package com.board2notes.app.data.image
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
+import com.board2notes.app.presentation.canvas.CanvasPage
+import com.board2notes.app.presentation.canvas.CanvasElement
+import com.board2notes.app.presentation.canvas.StrokeElement
+import com.board2notes.app.presentation.canvas.ImageElement
+import com.board2notes.app.presentation.canvas.CanvasAssets
 import kotlin.math.max
 import kotlin.math.min
 
@@ -19,6 +26,59 @@ object CanvasNoteComposer {
         return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
             eraseColor(Color.WHITE)
         }
+    }
+
+    fun renderPageToBitmap(
+        filesDir: java.io.File,
+        noteId: String,
+        page: CanvasPage,
+        width: Int = DEFAULT_WIDTH,
+        height: Int = DEFAULT_HEIGHT
+    ): Bitmap {
+        val bitmap = createBlankCanvas(width, height)
+        val canvas = Canvas(bitmap)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+            style = Paint.Style.STROKE
+        }
+
+        page.forEach { element ->
+            when (element) {
+                is StrokeElement -> {
+                    if (element.points.size >= 2) {
+                        paint.color = element.colorArgb
+                        paint.strokeWidth = element.baseWidth
+                        if (element.highlighter) {
+                            paint.alpha = 120 // Semi-transparent for highlighters
+                        } else {
+                            paint.alpha = 255
+                        }
+                        
+                        val path = Path()
+                        val first = element.points.first()
+                        path.moveTo(first.x, first.y)
+                        for (i in 1 until element.points.size) {
+                            val pt = element.points[i]
+                            path.lineTo(pt.x, pt.y)
+                        }
+                        canvas.drawPath(path, paint)
+                    }
+                }
+                is ImageElement -> {
+                    val file = CanvasAssets.imageFile(filesDir, noteId, element.asset)
+                    if (file.exists()) {
+                        val imgBmp = BitmapFactory.decodeFile(file.absolutePath)
+                        if (imgBmp != null) {
+                            val destRect = RectF(element.left, element.top, element.left + element.width, element.top + element.height)
+                            val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                            canvas.drawBitmap(imgBmp, null, destRect, imgPaint)
+                        }
+                    }
+                }
+            }
+        }
+        return bitmap
     }
 
     fun composeInkOnCanvas(baseBitmap: Bitmap?, inkSource: Bitmap): Bitmap {

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Undo
@@ -46,6 +47,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -193,8 +195,9 @@ fun CanvasEditor(
 
     fun decideAction(type: PointerType): SingleAction = when (controller.tool) {
         CanvasTool.Select -> SingleAction.SelectInteract
-        CanvasTool.Pen -> if (type == PointerType.Stylus || input.allowFingerDrawing) SingleAction.DrawPen else SingleAction.Pan
-        CanvasTool.Eraser -> if (type == PointerType.Stylus || input.allowFingerDrawing) SingleAction.Erase else SingleAction.Pan
+        CanvasTool.Pen -> if (type == PointerType.Stylus || type == PointerType.Mouse || input.allowFingerDrawing) SingleAction.DrawPen else SingleAction.Pan
+        CanvasTool.Eraser -> if (type == PointerType.Stylus || type == PointerType.Mouse || input.allowFingerDrawing) SingleAction.Erase else SingleAction.Pan
+        CanvasTool.Pan -> SingleAction.Pan
     }
 
     fun handleScreenCorners(bounds: Rect): Map<Corner, Offset> {
@@ -226,6 +229,7 @@ fun CanvasEditor(
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
+                .clipToBounds()
                 .pointerInput(controller.tool, input, controller.safePageIndex) {
                     awaitEachGesture {
                         val firstEvent = awaitPointerEvent()
@@ -310,14 +314,22 @@ fun CanvasEditor(
                                 if (pc != null && prevDist > 0f) {
                                     val zoom = (dist / prevDist).coerceIn(0.8f, 1.25f)
                                     val oldScale = controller.viewportScale
-                                    val newScale = (oldScale * zoom).coerceIn(input.minZoom, input.maxZoom)
-                                    val focus = screenToCanvas(centroid, controller.viewportOffset, oldScale)
-                                    val pan = Offset(centroid.x - pc.x, centroid.y - pc.y)
-                                    controller.viewportScale = newScale
-                                    controller.viewportOffset = Offset(
-                                        centroid.x - focus.x * newScale + pan.x,
-                                        centroid.y - focus.y * newScale + pan.y
+                                    var newScale = (oldScale * zoom).coerceIn(input.minZoom, input.maxZoom)
+                                    if (newScale.isNaN() || newScale.isInfinite()) {
+                                        newScale = oldScale
+                                    }
+                                    // Focus should be the canvas coordinate of the previous centroid before scale update
+                                    val focus = screenToCanvas(pc, controller.viewportOffset, oldScale)
+                                    // Calculate new offset such that the canvas focus coordinate aligns with the new centroid
+                                    var newOffset = Offset(
+                                        centroid.x - focus.x * newScale,
+                                        centroid.y - focus.y * newScale
                                     )
+                                    if (newOffset.x.isNaN() || newOffset.x.isInfinite() || newOffset.y.isNaN() || newOffset.y.isInfinite()) {
+                                        newOffset = controller.viewportOffset
+                                    }
+                                    controller.viewportScale = newScale
+                                    controller.viewportOffset = newOffset
                                 }
                                 prevCentroid = centroid; prevDist = dist
                                 event.changes.forEach { it.consume() }
@@ -411,7 +423,7 @@ fun CanvasEditor(
         ) {
             val off = controller.viewportOffset
             val sc = controller.viewportScale
-            withTransform({ translate(off.x, off.y); scale(sc, sc) }) {
+            withTransform({ translate(off.x, off.y); scale(sc, sc, pivot = Offset.Zero) }) {
                 background?.let { bg ->
                     drawImage(
                         image = bg,
@@ -514,6 +526,9 @@ fun CanvasEditor(
                 }
                 CanvasToolIconButton(Icons.Default.CropFree, selected = controller.tool == CanvasTool.Select) {
                     controller.tool = CanvasTool.Select
+                }
+                CanvasToolIconButton(Icons.Default.PanTool, selected = controller.tool == CanvasTool.Pan) {
+                    controller.tool = CanvasTool.Pan; controller.clearSelection()
                 }
                 CanvasToolIconButton(Icons.Default.Undo, selected = false, enabled = controller.canUndo) { controller.undo() }
                 CanvasToolIconButton(Icons.Default.Redo, selected = false, enabled = controller.canRedo) { controller.redo() }

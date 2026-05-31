@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.board2notes.app.presentation.canvas.CanvasDocument
 import java.io.File
 import java.util.UUID
 
@@ -35,7 +36,7 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
 
     override suspend fun getNote(id: String): SavedNote? = withContext(Dispatchers.IO) {
         mutex.withLock {
-            readIndex().firstOrNull { it.id == id }
+            readIndex().firstOrNull { it.id == id && !it.isDeleted }
         }
     }
 
@@ -122,10 +123,24 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
             mutex.withLock {
                 val notes = readIndex()
                 val current = notes.firstOrNull { it.id == id } ?: return@withLock null
+                
+                val canvasPath = if (current.noteType == NoteType.Canvas && body.isNotBlank()) {
+                    runCatching {
+                        val doc = CanvasDocument.fromBody(body)
+                        val firstPage = doc.pages.firstOrNull() ?: emptyList()
+                        val bmp = CanvasNoteComposer.renderPageToBitmap(notesRoot.parentFile!!, id, firstPage)
+                        val noteDir = File(notesRoot, id).apply { mkdirs() }
+                        writeBitmap(bmp, File(noteDir, "canvas.png"))
+                    }.getOrNull() ?: current.canvasImagePath
+                } else {
+                    current.canvasImagePath
+                }
+
                 val updated = current.copy(
                     title = title.ifBlank { "B2Note Notu" },
                     body = body,
                     courseName = courseName,
+                    canvasImagePath = canvasPath,
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 writeIndex(notes.map { if (it.id == id) updated else it })
@@ -186,7 +201,7 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
 
     private fun readIndex(): List<SavedNote> {
         if (!indexFile.exists()) return emptyList()
-        val text = indexFile.readText()
+        val text = indexFile.readText(Charsets.UTF_8)
         if (text.isBlank()) return emptyList()
         val array = JSONArray(text)
         return List(array.length()) { index ->

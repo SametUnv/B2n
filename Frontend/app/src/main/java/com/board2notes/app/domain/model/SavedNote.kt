@@ -24,9 +24,22 @@ data class SavedNote(
     val isDeleted: Boolean = false
 ) {
     val preview: String
-        get() = body.substringBefore("[DrawingData:")
-            .lineSequence()
-            .firstOrNull { it.isNotBlank() }
-            ?.take(140)
-            ?: if (noteType == NoteType.Canvas) "Canvas notu" else ""
+
+        get() {
+
+            val cleanText = body.substringBefore("[[B2N_CANVAS_V2]]")
+
+                .substringBefore("[CanvasPages:")
+
+                .substringBefore("[DrawingData:")
+
+                .trim()
+
+            if (cleanText.isNotBlank()) return cleanText.take(140)
+
+            if (ocrText.isNotBlank()) return ocrText.trim().take(140)
+
+            return if (noteType == NoteType.Canvas) "Canvas Çizim Notu" else ""
+
+        }
 }
