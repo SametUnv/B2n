@@ -212,6 +212,40 @@ import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.foundation.ExperimentalFoundationApi
+
+private val EraserIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Eraser",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = null,
+            stroke = SolidColor(Color(0xFF0F172A)),
+            strokeLineWidth = 2f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round
+        ) {
+            moveTo(16.24f, 7.76f)
+            lineTo(19.07f, 10.59f)
+            lineTo(11.29f, 18.36f)
+            lineTo(5.64f, 18.36f)
+            lineTo(5.64f, 12.71f)
+            close()
+            moveTo(9.88f, 16.95f)
+            lineTo(15.54f, 11.3f)
+        }
+    }.build()
+}
 
 private object Route {
     const val Home = "home"
@@ -261,6 +295,8 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
     var showCreateNoteSheet by remember { mutableStateOf(false) }
     var showStartupLoading by remember { mutableStateOf(true) }
     var showTopMenu by remember { mutableStateOf(false) }
+    var selectedNoteIds by remember { mutableStateOf(emptySet<String>()) }
+    var showBulkDeleteDialog by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
 
@@ -358,112 +394,149 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
         },
         topBar = {
             if (route != Route.NoteEditor) {
-                CenterAlignedTopAppBar(
-                title = {
-                    if (route == Route.Home && isSearchingHome) {
-                        androidx.compose.foundation.text.BasicTextField(
-                            value = homeSearchQuery,
-                            onValueChange = { homeSearchQuery = it },
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(
-                                color = MaterialTheme.colorScheme.onBackground
-                            ),
-                            singleLine = true,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(end = 16.dp)
-                                .background(
-                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                                    RoundedCornerShape(12.dp)
-                                )
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            decorationBox = { innerTextField ->
-                                if (homeSearchQuery.isEmpty()) {
-                                    Text(
-                                        "Notlarda arayın...",
-                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                if (route == Route.Home && selectedNoteIds.isNotEmpty()) {
+                    CenterAlignedTopAppBar(
+                        title = {
+                            Text(
+                                "${selectedNoteIds.size} Seçildi",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { selectedNoteIds = emptySet() }) {
+                                Icon(Icons.Default.Close, contentDescription = "Kapat", tint = Color.White)
+                            }
+                        },
+                        actions = {
+                            IconButton(onClick = {
+                                selectedNoteIds.forEach { viewModel.archiveNote(it) }
+                                selectedNoteIds = emptySet()
+                            }) {
+                                Icon(Icons.Default.Folder, contentDescription = "Arşivle", tint = Color.White)
+                            }
+                            IconButton(onClick = {
+                                showBulkDeleteDialog = true
+                            }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Sil", tint = Color.White)
+                            }
+                        },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                            containerColor = Color(0xFF0F172A),
+                            titleContentColor = Color.White,
+                            navigationIconContentColor = Color.White,
+                            actionIconContentColor = Color.White
+                        )
+                    )
+                } else {
+                    CenterAlignedTopAppBar(
+                        title = {
+                            if (route == Route.Home && isSearchingHome) {
+                                androidx.compose.foundation.text.BasicTextField(
+                                    value = homeSearchQuery,
+                                    onValueChange = { homeSearchQuery = it },
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    ),
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(end = 16.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                            RoundedCornerShape(12.dp)
                                         )
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    decorationBox = { innerTextField ->
+                                        if (homeSearchQuery.isEmpty()) {
+                                            Text(
+                                                "Notlarda arayın...",
+                                                style = MaterialTheme.typography.bodyLarge.copy(
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                                )
+                                            )
+                                        }
+                                        innerTextField()
+                                    }
+                                )
+                            } else if (topLevel) {
+                                HeaderLogoMark()
+                            } else {
+                                Text(
+                                    titleForRoute(route),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        },
+                        navigationIcon = {
+                            if (!topLevel) {
+                                IconButton(onClick = { navController.popBackStack() }) {
+                                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                                }
+                            } else {
+                                IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                                    Icon(Icons.Default.Menu, contentDescription = "Menü")
+                                }
+                            }
+                        },
+                        actions = {
+                            if (route == Route.Home) {
+                                IconButton(onClick = {
+                                    isSearchingHome = !isSearchingHome
+                                    if (!isSearchingHome) homeSearchQuery = ""
+                                }) {
+                                    Icon(
+                                        imageVector = if (isSearchingHome) Icons.Default.Close else Icons.Default.Search,
+                                        contentDescription = "Arama"
                                     )
                                 }
-                                innerTextField()
                             }
-                        )
-                    } else if (topLevel) {
-                        HeaderLogoMark()
-                    } else {
-                        Text(
-                            titleForRoute(route),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                },
-                navigationIcon = {
-                    if (!topLevel) {
-                        IconButton(onClick = { navController.popBackStack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
-                        }
-                    } else {
-                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                            Icon(Icons.Default.Menu, contentDescription = "Menü")
-                        }
-                    }
-                },
-                actions = {
-                    if (route == Route.Home) {
-                        IconButton(onClick = {
-                            isSearchingHome = !isSearchingHome
-                            if (!isSearchingHome) homeSearchQuery = ""
-                        }) {
-                            Icon(
-                                imageVector = if (isSearchingHome) Icons.Default.Close else Icons.Default.Search,
-                                contentDescription = "Arama"
-                            )
-                        }
-                    }
-                    if (topLevel) {
-                        Box {
-                            IconButton(onClick = { showTopMenu = true }) {
-                                Icon(Icons.Default.MoreVert, contentDescription = "Daha fazla")
-                            }
-                            TopLevelOverflowMenu(
-                                expanded = showTopMenu,
-                                onDismiss = { showTopMenu = false },
-                                onHome = {
-                                    showTopMenu = false
-                                    navigateTopLevel(Route.Home, navController, viewModel)
-                                },
-                                onNotes = {
-                                    showTopMenu = false
-                                    navigateTopLevel(Route.Notes, navController, viewModel)
-                                },
-                                onArchive = {
-                                    showTopMenu = false
-                                    navController.navigate(Route.Archive)
-                                },
-                                onSettings = {
-                                    showTopMenu = false
-                                    navigateTopLevel(Route.Settings, navController, viewModel)
+                            if (topLevel) {
+                                Box {
+                                    IconButton(onClick = { showTopMenu = true }) {
+                                        Icon(Icons.Default.MoreVert, contentDescription = "Daha fazla")
+                                    }
+                                    TopLevelOverflowMenu(
+                                        expanded = showTopMenu,
+                                        onDismiss = { showTopMenu = false },
+                                        onHome = {
+                                            showTopMenu = false
+                                            navigateTopLevel(Route.Home, navController, viewModel)
+                                        },
+                                        onNotes = {
+                                            showTopMenu = false
+                                            navigateTopLevel(Route.Notes, navController, viewModel)
+                                        },
+                                        onArchive = {
+                                            showTopMenu = false
+                                            navController.navigate(Route.Archive)
+                                        },
+                                        onSettings = {
+                                            showTopMenu = false
+                                            navigateTopLevel(Route.Settings, navController, viewModel)
+                                        }
+                                    )
                                 }
-                            )
-                        }
-                    }
-                    if (state.settings.debugMode && state.note != null) {
-                        IconButton(onClick = { navController.navigate(Route.Debug) }) {
-                            Icon(Icons.Default.BugReport, contentDescription = "Debug")
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
-                    actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                )
+                            }
+                            if (state.settings.debugMode && state.note != null) {
+                                IconButton(onClick = { navController.navigate(Route.Debug) }) {
+                                    Icon(Icons.Default.BugReport, contentDescription = "Debug")
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            titleContentColor = MaterialTheme.colorScheme.onBackground,
+                            navigationIconContentColor = MaterialTheme.colorScheme.onBackground,
+                            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
             }
         },
         bottomBar = {
@@ -523,13 +596,16 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     HomeScreen(
                         state = state,
                         searchQuery = homeSearchQuery,
+                        selectedNoteIds = selectedNoteIds,
+                        onSelectionChange = { selectedNoteIds = it },
                         onStart = { showCreateNoteSheet = true },
                         onOpenNote = { note ->
                             viewModel.openSavedNote(note.id)
                             navController.navigate(Route.NoteEditor)
                         },
                         onArchiveNote = viewModel::archiveNote,
-                        onDeleteNote = viewModel::deleteNoteById
+                        onDeleteNote = viewModel::deleteNoteById,
+                        viewModel = viewModel
                     )
                 }
                 composable(Route.Capture) {
@@ -701,86 +777,196 @@ private fun Board2NoteNavigationDrawer(
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .padding(horizontal = 12.dp, vertical = 18.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.White, Color(0xFFF8FAFC))
+                    )
+                )
+                .padding(horizontal = 16.dp, vertical = 18.dp)
         ) {
-            HeaderLogoMark(
+            // Premium Card Header
+            Surface(
                 modifier = Modifier
-                    .padding(start = 12.dp, top = 4.dp, bottom = 20.dp)
-                    .width(132.dp)
-                    .height(48.dp)
-            )
+                    .padding(vertical = 12.dp)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = Color.White,
+                border = BorderStroke(1.dp, Color(0xFFEFF6FF)),
+                shadowElevation = 2.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            "Board2Note",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "Ders Notları Asistanı",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
             mainDrawerDestinations.forEach { destination ->
                 val selected = when (destination.route) {
                     Route.Notes -> currentRoute == Route.Notes || currentRoute?.startsWith("${Route.Folder}/") == true
                     Route.Archive -> currentRoute == Route.Archive
                     else -> currentRoute == destination.route
                 }
-                NavigationDrawerItem(
-                    label = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(destination.label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-                            if (destination.route == Route.Archive && state.archivedNotes.isNotEmpty()) {
-                                Spacer(Modifier.width(8.dp))
-                                Surface(shape = CircleShape, color = Color(0xFFEFF6FF)) {
-                                    Text(
-                                        "${state.archivedNotes.size}",
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp)
+                ) {
+                    // Modern left pill capsule indicator for active selection
+                    if (selected) {
+                        Surface(
+                            modifier = Modifier
+                                .width(4.dp)
+                                .height(28.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = MaterialTheme.colorScheme.primary
+                        ) {}
+                    } else {
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Spacer(Modifier.width(8.dp))
+
+                    NavigationDrawerItem(
+                        label = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = destination.label,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (destination.route == Route.Archive && state.archivedNotes.isNotEmpty()) {
+                                    Spacer(Modifier.width(8.dp))
+                                    Surface(shape = CircleShape, color = Color(0xFFEFF6FF)) {
+                                        Text(
+                                            "${state.archivedNotes.size}",
+                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
                                 }
                             }
-                        }
-                    },
-                    selected = selected,
-                    onClick = { onDestinationClick(destination) },
-                    icon = { Icon(destination.icon, contentDescription = null) },
-                    colors = NavigationDrawerItemDefaults.colors(
-                        selectedContainerColor = Color(0xFFEFF6FF),
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        unselectedContainerColor = Color.Transparent,
-                        unselectedIconColor = Color(0xFF64748B),
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.padding(vertical = 2.dp)
-                )
+                        },
+                        selected = selected,
+                        onClick = { onDestinationClick(destination) },
+                        icon = { Icon(destination.icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        colors = NavigationDrawerItemDefaults.colors(
+                            selectedContainerColor = Color(0xFFEFF6FF),
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            unselectedContainerColor = Color.Transparent,
+                            unselectedIconColor = Color(0xFF64748B),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
+
             if (state.settings.debugMode) {
-                NavigationDrawerItem(
-                    label = { Text("Debug") },
-                    selected = currentRoute == Route.Debug,
-                    onClick = { onDestinationClick(NavigationDestination(Route.Debug, "Debug", Icons.Default.BugReport, topLevel = false)) },
-                    icon = { Icon(Icons.Default.BugReport, contentDescription = null) },
-                    colors = NavigationDrawerItemDefaults.colors(
-                        selectedContainerColor = Color(0xFFEFF6FF),
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary,
-                        unselectedContainerColor = Color.Transparent,
-                        unselectedIconColor = Color(0xFF64748B),
-                        unselectedTextColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    modifier = Modifier.padding(vertical = 2.dp)
-                )
+                val selected = currentRoute == Route.Debug
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp)
+                ) {
+                    if (selected) {
+                        Surface(
+                            modifier = Modifier
+                                .width(4.dp)
+                                .height(28.dp)
+                                .clip(RoundedCornerShape(2.dp)),
+                            color = MaterialTheme.colorScheme.primary
+                        ) {}
+                    } else {
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Spacer(Modifier.width(8.dp))
+
+                    NavigationDrawerItem(
+                        label = { Text("Debug", style = MaterialTheme.typography.bodyMedium) },
+                        selected = selected,
+                        onClick = { onDestinationClick(NavigationDestination(Route.Debug, "Debug", Icons.Default.BugReport, topLevel = false)) },
+                        icon = { Icon(Icons.Default.BugReport, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        colors = NavigationDrawerItemDefaults.colors(
+                            selectedContainerColor = Color(0xFFEFF6FF),
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            unselectedContainerColor = Color.Transparent,
+                            unselectedIconColor = Color(0xFF64748B),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
             Spacer(Modifier.weight(1f))
-            Divider(color = Color(0xFFE2E8F0))
+            Divider(color = Color(0xFFEFF6FF))
             Spacer(Modifier.height(8.dp))
-            NavigationDrawerItem(
-                label = { Text(settingsDrawerDestination.label, fontWeight = FontWeight.SemiBold) },
-                selected = currentRoute == Route.Settings,
-                onClick = { onDestinationClick(settingsDrawerDestination) },
-                icon = { Icon(settingsDrawerDestination.icon, contentDescription = null) },
-                colors = NavigationDrawerItemDefaults.colors(
-                    selectedContainerColor = Color(0xFFEFF6FF),
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    unselectedContainerColor = Color.Transparent,
-                    unselectedIconColor = Color(0xFF64748B),
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurface
+            
+            val settingsSelected = currentRoute == Route.Settings
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (settingsSelected) {
+                    Surface(
+                        modifier = Modifier
+                            .width(4.dp)
+                            .height(28.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = MaterialTheme.colorScheme.primary
+                    ) {}
+                } else {
+                    Spacer(Modifier.width(4.dp))
+                }
+                Spacer(Modifier.width(8.dp))
+
+                NavigationDrawerItem(
+                    label = { Text(settingsDrawerDestination.label, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium) },
+                    selected = settingsSelected,
+                    onClick = { onDestinationClick(settingsDrawerDestination) },
+                    icon = { Icon(settingsDrawerDestination.icon, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = Color(0xFFEFF6FF),
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        unselectedContainerColor = Color.Transparent,
+                        unselectedIconColor = Color(0xFF64748B),
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.weight(1f)
                 )
-            )
+            }
         }
     }
 }
@@ -1111,14 +1297,18 @@ private fun navigateTopLevel(route: String, navController: NavHostController, vi
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HomeScreen(
     state: Board2NotesUiState,
     searchQuery: String,
+    selectedNoteIds: Set<String>,
+    onSelectionChange: (Set<String>) -> Unit,
     onStart: () -> Unit,
     onOpenNote: (SavedNote) -> Unit,
     onArchiveNote: (String) -> Unit,
-    onDeleteNote: (String) -> Unit
+    onDeleteNote: (String) -> Unit,
+    viewModel: Board2NotesViewModel
 ) {
     var pendingDelete by remember { mutableStateOf<SavedNote?>(null) }
     pendingDelete?.let { note ->
@@ -1142,42 +1332,400 @@ private fun HomeScreen(
         }
     }
 
-    ScreenColumn {
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = if (searchQuery.isNotBlank()) "Arama Sonuçları (${filteredNotes.size})" else "Tüm Notlar",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
-        )
-        Spacer(Modifier.height(12.dp))
-        if (filteredNotes.isEmpty()) {
-            HomeEmptyNotesCard()
-        } else {
-            val chunks = remember(filteredNotes) { filteredNotes.chunked(2) }
-            chunks.forEach { pair ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    pair.forEach { note ->
-                        Box(modifier = Modifier.weight(1f)) {
-                            SwipeableNoteActions(
-                                onArchive = { onArchiveNote(note.id) },
-                                onDelete = { pendingDelete = note }
+    val existingCourses = remember(state.savedNotes) {
+        val courses = state.savedNotes.map { it.courseName.ifBlank { "Genel" } }.distinct().sorted()
+        if ("Genel" !in courses) listOf("Genel") + courses else courses
+    }
+
+    // Drag and Drop state variables
+    var activeDraggedNote by remember { mutableStateOf<SavedNote?>(null) }
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    var currentHoveredCourse by remember { mutableStateOf<String?>(null) }
+    val courseBounds = remember { mutableStateMapOf<String, Rect>() }
+    val cardPositions = remember { mutableStateMapOf<String, Rect>() }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        ScreenColumn {
+            Spacer(Modifier.height(16.dp))
+
+            // Premium horizontally scrollable categories (dersler) header at top of home screen
+            Text(
+                text = "Dersleriniz",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                existingCourses.forEach { courseName ->
+                    val isHovered = currentHoveredCourse == courseName
+                    val count = state.savedNotes.count { 
+                        it.courseName == (if (courseName == "Genel") "" else courseName) && !it.isArchived 
+                    }
+                    val folderColorVal = if (courseName == "Genel") Color(0xFF64748B) else folderColor(courseName)
+
+                    Surface(
+                        modifier = Modifier
+                            .onGloballyPositioned { coordinates ->
+                                courseBounds[courseName] = coordinates.boundsInRoot()
+                            }
+                            .graphicsLayer {
+                                scaleX = if (isHovered) 1.1f else 1.0f
+                                scaleY = if (isHovered) 1.1f else 1.0f
+                            },
+                        shape = RoundedCornerShape(16.dp),
+                        color = if (isHovered) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.White,
+                        border = BorderStroke(
+                            width = if (isHovered) 2.dp else 1.dp,
+                            color = if (isHovered) MaterialTheme.colorScheme.primary else Color(0xFFEFF6FF)
+                        ),
+                        shadowElevation = if (isHovered) 4.dp else 1.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = folderColorVal.copy(alpha = 0.12f),
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                SamsungNoteCard(note = note, onClick = { onOpenNote(note) })
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.Folder,
+                                        contentDescription = null,
+                                        tint = folderColorVal,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = courseName,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isHovered) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "$count not",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }
-                    if (pair.size < 2) {
-                        Spacer(modifier = Modifier.weight(1f))
-                    }
                 }
-                Spacer(Modifier.height(12.dp))
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            Text(
+                text = if (searchQuery.isNotBlank()) "Arama Sonuçları (${filteredNotes.size})" else "Tüm Notlar",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+            )
+            Spacer(Modifier.height(12.dp))
+
+            if (filteredNotes.isEmpty()) {
+                HomeEmptyNotesCard()
+            } else {
+                val chunks = remember(filteredNotes) { filteredNotes.chunked(2) }
+                chunks.forEach { pair ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        pair.forEach { note ->
+                            var showContextMenu by remember { mutableStateOf(false) }
+                            val isSelected = note.id in selectedNoteIds
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onGloballyPositioned { coordinates ->
+                                        cardPositions[note.id] = coordinates.boundsInRoot()
+                                    }
+                                    .pointerInput(note, selectedNoteIds) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = { offset ->
+                                                if (selectedNoteIds.isEmpty()) {
+                                                    activeDraggedNote = note
+                                                    dragOffset = Offset.Zero
+                                                }
+                                            },
+                                            onDrag = { change, dragAmount ->
+                                                if (activeDraggedNote != null) {
+                                                    change.consume()
+                                                    dragOffset += dragAmount
+                                                    val cardRect = cardPositions[note.id]
+                                                    if (cardRect != null) {
+                                                        val absoluteTouch = Offset(
+                                                            x = cardRect.left + change.position.x,
+                                                            y = cardRect.top + change.position.y
+                                                        )
+                                                        currentHoveredCourse = courseBounds.entries.firstOrNull { 
+                                                            it.value.contains(absoluteTouch) 
+                                                        }?.key
+                                                    }
+                                                }
+                                            },
+                                            onDragEnd = {
+                                                if (activeDraggedNote != null) {
+                                                    val targetCourse = currentHoveredCourse
+                                                    if (targetCourse != null) {
+                                                        val finalCourse = if (targetCourse == "Genel") "" else targetCourse
+                                                        viewModel.updateNoteCourse(activeDraggedNote!!.id, finalCourse)
+                                                    }
+                                                    activeDraggedNote = null
+                                                    dragOffset = Offset.Zero
+                                                    currentHoveredCourse = null
+                                                }
+                                            },
+                                            onDragCancel = {
+                                                activeDraggedNote = null
+                                                dragOffset = Offset.Zero
+                                                currentHoveredCourse = null
+                                            }
+                                        )
+                                    }
+                            ) {
+                                Box(
+                                    modifier = Modifier.combinedClickable(
+                                        onClick = {
+                                            if (selectedNoteIds.isNotEmpty()) {
+                                                onSelectionChange(
+                                                    if (isSelected) selectedNoteIds - note.id else selectedNoteIds + note.id
+                                                )
+                                            } else {
+                                                onOpenNote(note)
+                                            }
+                                        },
+                                        onLongClick = {
+                                            if (selectedNoteIds.isEmpty()) {
+                                                showContextMenu = true
+                                            }
+                                        }
+                                    )
+                                ) {
+                                    SamsungNoteCard(
+                                        note = note,
+                                        isSelected = isSelected,
+                                        onClick = {
+                                            if (selectedNoteIds.isNotEmpty()) {
+                                                onSelectionChange(
+                                                    if (isSelected) selectedNoteIds - note.id else selectedNoteIds + note.id
+                                                )
+                                            } else {
+                                                onOpenNote(note)
+                                            }
+                                        }
+                                    )
+
+                                    // High-quality contextual small dropdown menu
+                                    DropdownMenu(
+                                        expanded = showContextMenu,
+                                        onDismissRequest = { showContextMenu = false }
+                                    ) {
+                                        DropdownMenuItem(
+                                            text = { Text("Aç", fontWeight = FontWeight.SemiBold) },
+                                            leadingIcon = { Icon(Icons.Default.Folder, null, modifier = Modifier.size(18.dp)) },
+                                            onClick = {
+                                                showContextMenu = false
+                                                onOpenNote(note)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Arşivle", fontWeight = FontWeight.SemiBold) },
+                                            leadingIcon = { Icon(Icons.Default.Folder, null, modifier = Modifier.size(18.dp)) },
+                                            onClick = {
+                                                showContextMenu = false
+                                                onArchiveNote(note.id)
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Sil", fontWeight = FontWeight.SemiBold) },
+                                            leadingIcon = { Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp)) },
+                                            onClick = {
+                                                showContextMenu = false
+                                                pendingDelete = note
+                                            }
+                                        )
+                                        DropdownMenuItem(
+                                            text = { Text("Çoklu Seç", fontWeight = FontWeight.SemiBold) },
+                                            leadingIcon = { Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp)) },
+                                            onClick = {
+                                                showContextMenu = false
+                                                onSelectionChange(selectedNoteIds + note.id)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (pair.size < 2) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
+            Spacer(Modifier.height(96.dp))
+        }
+
+        // Floating Drag Preview card
+        if (activeDraggedNote != null) {
+            val cardRect = cardPositions[activeDraggedNote!!.id]
+            if (cardRect != null) {
+                Box(
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                x = (cardRect.left + dragOffset.x).roundToInt(),
+                                y = (cardRect.top - 80.dp.toPx() + dragOffset.y).roundToInt()
+                            )
+                        }
+                        .graphicsLayer {
+                            alpha = 0.85f
+                            scaleX = 1.05f
+                            scaleY = 1.05f
+                            shadowElevation = 8.dp.toPx()
+                        }
+                        .width(160.dp)
+                ) {
+                    SamsungNoteCard(note = activeDraggedNote!!, onClick = {})
+                }
             }
         }
-        Spacer(Modifier.height(96.dp))
+    }
+}
+
+@Composable
+private fun SamsungNoteCard(
+    note: SavedNote,
+    isSelected: Boolean = false,
+    isHovered: Boolean = false,
+    onClick: () -> Unit
+) {
+    val previewPath = note.previewImagePath()
+    val bitmap = remember(previewPath) {
+        previewPath?.let { path ->
+            try {
+                val options = BitmapFactory.Options().apply {
+                    inSampleSize = 4
+                }
+                BitmapFactory.decodeFile(path, options)
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface,
+        tonalElevation = if (isSelected) 3.dp else 1.dp,
+        border = BorderStroke(
+            width = if (isSelected) 2.5.dp else 1.dp,
+            color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFFEFF6FF)
+        )
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box {
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(90.dp)
+                            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+                    )
+                }
+                if (isSelected) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(8.dp)
+                            .size(24.dp)
+                            .align(Alignment.TopEnd)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Seçildi",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+            Column(modifier = Modifier.padding(12.dp)) {
+                if (note.courseName.isNotBlank()) {
+                    val badgeColor = folderColor(note.courseName)
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = badgeColor.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.25f)),
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Text(
+                            text = note.courseName,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (note.noteType == NoteType.Canvas) Color(0xFFEFF6FF) else Color(0xFFF8FAFC),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                ) {
+                    Text(
+                        text = if (note.noteType == NoteType.Canvas) "Canvas" else "Yazı",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                    )
+                }
+                Text(
+                    text = note.title.ifBlank { "Başlıksız Not" },
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = note.body.ifBlank { "Not içeriği boş." },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 16.sp
+                )
+            }
+        }
     }
 }
 
@@ -1719,57 +2267,109 @@ private fun SamsungCaptureScreen(onPick: () -> Unit, onCamera: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 24.dp)
+            .verticalScroll(rememberScrollState())
     ) {
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(16.dp))
         Text(
-            "Tahtadan ekle",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.SemiBold,
+            "Tahtadan Not Ekle",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Tahtayı fotoğraflayın veya galeriden seçin. Çıktı açık nota otomatik eklenecek.",
+            "Beyaz tahta veya slayt ekranını çekerek otomatik ders notuna dönüştürün.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            lineHeight = 20.sp
+            lineHeight = 22.sp
         )
-        Spacer(Modifier.height(22.dp))
+        Spacer(Modifier.height(20.dp))
+
+        // Beautiful Workflow Card
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xFFF8FAFC),
+            border = BorderStroke(1.dp, Color(0xFFEFF6FF))
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    "Nasıl Çalışır?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(12.dp))
+                WorkflowStepRow("1", "Fotoğraf Çek / Yükle", "Sınıf tahtası veya projeksiyon ekranını net bir açıdan çekin.")
+                Spacer(Modifier.height(10.dp))
+                WorkflowStepRow("2", "Perspektif Köşeleri Belirle", "Otomatik tespit edilen köşeleri elle hassas şekilde düzenleyin.")
+                Spacer(Modifier.height(10.dp))
+                WorkflowStepRow("3", "AI İyileştirme ve OCR", "Görüntü arka planı temizlenir, metinler taranır ve notunuza aktarılır.")
+            }
+        }
+
+        Spacer(Modifier.height(18.dp))
+        
         MinimalBoardMockCard(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f)
+                .height(200.dp)
         )
-        Spacer(Modifier.height(18.dp))
+        
+        Spacer(Modifier.height(24.dp))
+        
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(bottom = 32.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             OutlinedButton(
                 onClick = onPick,
                 modifier = Modifier
                     .weight(1f)
-                    .height(52.dp),
-                shape = RoundedCornerShape(16.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(18.dp),
+                border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
             ) {
-                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Galeriden seç")
+                Text("Galeriden Seç", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             }
+            
             Button(
                 onClick = onCamera,
                 modifier = Modifier
                     .weight(1f)
-                    .height(52.dp),
-                shape = RoundedCornerShape(16.dp)
+                    .height(56.dp),
+                shape = RoundedCornerShape(18.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
             ) {
-                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Fotoğraf çek")
+                Text("Fotoğraf Çek", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
             }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowStepRow(stepNum: String, title: String, desc: String) {
+    Row(verticalAlignment = Alignment.Top) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(26.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(stepNum, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -2885,6 +3485,7 @@ private fun NoteEditorScreen(
     var showImagePreview by remember { mutableStateOf(false) }
     var showNewCourseDialog by remember { mutableStateOf(false) }
     var newCourseName by remember { mutableStateOf("") }
+    var isPinchZoomActive by remember { mutableStateOf(false) }
     
     var selectedTab by remember(note.createdAtEpochMs, state.activeSavedNoteId, noteType) {
         mutableIntStateOf(if (noteType == NoteType.Canvas) 1 else 0)
@@ -3434,6 +4035,7 @@ private fun SamsungStyleNoteEditorScreen(
     var courseDropdownExpanded by remember { mutableStateOf(false) }
     var showNewCourseDialog by remember { mutableStateOf(false) }
     var newCourseName by remember { mutableStateOf("") }
+    var isPinchZoomActive by remember { mutableStateOf(false) }
     var saveStatus by remember(state.activeSavedNoteId) { mutableStateOf("Kaydedildi") }
     val canvasBitmap = remember(savedNote?.canvasImagePath) {
         savedNote?.canvasImagePath?.let { BitmapFactory.decodeFile(it) }
@@ -3562,14 +4164,7 @@ private fun SamsungStyleNoteEditorScreen(
                                 courseDropdownExpanded = true
                             }
                         )
-                        DropdownMenuItem(
-                            text = { Text("Yeni ders oluştur") },
-                            leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
-                            onClick = {
-                                showMoreMenu = false
-                                showNewCourseDialog = true
-                            }
-                        )
+
                         DropdownMenuItem(
                             text = { Text("Kaydet ve notlara dön") },
                             leadingIcon = { Icon(Icons.Default.Save, contentDescription = null) },
@@ -3672,7 +4267,7 @@ private fun SamsungStyleNoteEditorScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 18.dp, vertical = 12.dp)
-                        .pointerInput(viewportScale, viewportOffset) {
+                        .pointerInput(Unit) {
                             awaitEachGesture {
                                 var previousCentroid: Offset? = null
                                 var previousDistance = 0f
@@ -3680,6 +4275,7 @@ private fun SamsungStyleNoteEditorScreen(
                                     val event = awaitPointerEvent()
                                     val pressed = event.changes.filter { it.pressed }
                                     if (pressed.size >= 2) {
+                                        isPinchZoomActive = true
                                         val first = pressed[0].position
                                         val second = pressed[1].position
                                         val centroid = Offset(
@@ -3709,13 +4305,21 @@ private fun SamsungStyleNoteEditorScreen(
                                         }
                                         previousCentroid = centroid
                                         previousDistance = distance
+                                    } else {
+                                        isPinchZoomActive = false
                                     }
                                 } while (pressed.isNotEmpty())
+                                isPinchZoomActive = false
                             }
                         }
-                        .pointerInput(activeTool, currentColor, currentStrokeWidth, eraserSize, viewportScale, viewportOffset, canvasPaths, selectedPathIndexes) {
+                        .pointerInput(activeTool) {
                             detectDragGestures(
                                 onDragStart = { offset ->
+                                    if (isPinchZoomActive) {
+                                        currentPathPoints = emptyList()
+                                        eraserPoints = emptyList()
+                                        return@detectDragGestures
+                                    }
                                     val canvasPoint = screenToCanvas(offset, viewportOffset, viewportScale)
                                     when (activeTool) {
                                         CanvasTool.Pen -> currentPathPoints = listOf(canvasPoint)
@@ -3742,11 +4346,16 @@ private fun SamsungStyleNoteEditorScreen(
                                     }
                                 },
                                 onDrag = { change, _ ->
+                                    if (isPinchZoomActive) {
+                                        currentPathPoints = emptyList()
+                                        eraserPoints = emptyList()
+                                        return@detectDragGestures
+                                    }
                                     change.consume()
                                     val canvasPoint = screenToCanvas(change.position, viewportOffset, viewportScale)
                                     when (activeTool) {
                                         CanvasTool.Pen -> currentPathPoints = currentPathPoints + canvasPoint
-                                        CanvasTool.Eraser -> eraserPoints = eraserPoints + canvasPoint
+                                                                                CanvasTool.Eraser -> eraserPoints = eraserPoints + canvasPoint
                                         CanvasTool.Select -> {
                                             val moveStart = lastMovePoint
                                             if (moveStart != null && selectedPathIndexes.isNotEmpty()) {
@@ -3774,6 +4383,11 @@ private fun SamsungStyleNoteEditorScreen(
                                     }
                                 },
                                 onDragEnd = {
+                                    if (isPinchZoomActive) {
+                                        currentPathPoints = emptyList()
+                                        eraserPoints = emptyList()
+                                        return@detectDragGestures
+                                    }
                                     when (activeTool) {
                                         CanvasTool.Pen -> {
                                             if (currentPathPoints.isNotEmpty()) {
@@ -3800,8 +4414,7 @@ private fun SamsungStyleNoteEditorScreen(
                                     }
                                 }
                             )
-                        }
-                ) {
+                        }) {
                     withTransform({
                         translate(viewportOffset.x, viewportOffset.y)
                         scale(viewportScale, viewportScale)
@@ -3904,7 +4517,7 @@ private fun SamsungStyleNoteEditorScreen(
                             )
                         }
                         Box {
-                            CanvasToolIconButton(Icons.Default.Palette, selected = showStrokeMenu) {
+                            CanvasToolIconButton(Icons.Default.Tune, selected = showStrokeMenu) {
                                 showStrokeMenu = true
                             }
                             DropdownMenu(expanded = showStrokeMenu, onDismissRequest = { showStrokeMenu = false }) {
@@ -3923,7 +4536,7 @@ private fun SamsungStyleNoteEditorScreen(
                             }
                         }
                         Box {
-                            CanvasToolIconButton(Icons.Default.Delete, selected = activeTool == CanvasTool.Eraser) {
+                            CanvasToolIconButton(EraserIcon, selected = activeTool == CanvasTool.Eraser) {
                                 activeTool = CanvasTool.Eraser
                                 showEraserMenu = true
                             }
@@ -4820,6 +5433,9 @@ private fun SamsungSettingsScreen(
     viewModel: Board2NotesViewModel,
     onAbout: () -> Unit
 ) {
+    var activeCategoryIndex by remember { mutableIntStateOf(0) }
+    val categories = listOf("Genel & Görünüm", "Çizim & Canvas", "AI & Backend", "Sistem & Hakkında")
+
     ScreenColumn {
         Spacer(Modifier.height(10.dp))
         Text(
@@ -4830,161 +5446,190 @@ private fun SamsungSettingsScreen(
         )
         Spacer(Modifier.height(14.dp))
 
-        SamsungSettingsSection("Görünüm") {
-            SettingInfoRow(Icons.Default.AutoAwesome, "Tema", "Beyaz Board2Note teması")
-            SettingInfoRow(Icons.Default.Language, "Dil", "Türkçe")
-            SettingSwitchRow(
-                Icons.Default.Menu,
-                "Alt gezinme çubuğu",
-                "Samsung Notes tarzı için varsayılan kapalı",
-                state.settings.showBottomNavigation,
-                viewModel::setShowBottomNavigation
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        SamsungSettingsSection("Notlar") {
-            SettingInfoRow(Icons.Default.Description, "Varsayılan kayıt", "Otomatik kaydetme açık")
-            SettingInfoRow(Icons.Default.Folder, "Arşiv", "${state.archivedNotes.size} not arşivde")
-            SettingSwitchRow(
-                Icons.Default.AutoAwesome,
-                "LLM ile düzenleme",
-                "Not oluşturma tercihleri",
-                state.settings.llmEnabled,
-                viewModel::setLlmEnabled
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "Model 2 önceliği",
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                ModeButton("OCR", state.settings.enhancementMode == EnhancementMode.Ocr, Modifier.weight(1f)) {
-                    viewModel.setEnhancementMode(EnhancementMode.Ocr)
-                }
-                ModeButton("Beyaz sayfa", state.settings.enhancementMode == EnhancementMode.VisualNote, Modifier.weight(1f)) {
-                    viewModel.setEnhancementMode(EnhancementMode.VisualNote)
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "Tahta hassasiyeti: ${"%.2f".format(state.settings.threshold)}",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Slider(state.settings.threshold, viewModel::setThreshold, valueRange = 0.45f..0.60f)
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        SamsungSettingsSection("Canvas ve kalem") {
-            SettingSwitchRow(
-                Icons.Default.Brush,
-                "Parmakla çizim",
-                "Stylus yokken canvas çizimini açık tutar",
-                state.settings.allowFingerDrawing,
-                viewModel::setAllowFingerDrawing
-            )
-            SettingSwitchRow(
-                Icons.Default.Edit,
-                "Stylus basıncı",
-                "Destekli kalemlerde değişken kalınlık için hazır",
-                state.settings.useStylusPressure,
-                viewModel::setUseStylusPressure
-            )
-            SettingSwitchRow(
-                Icons.Default.Check,
-                "Avuç içi reddi",
-                "S Pen cihazlarda yanlış temasları azaltmak için hazırlık",
-                state.settings.palmRejection,
-                viewModel::setPalmRejection
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "Kalem kalınlığı: ${"%.0f".format(state.settings.defaultPenWidth)}",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Slider(state.settings.defaultPenWidth, viewModel::setDefaultPenWidth, valueRange = 2f..28f)
-            Text(
-                "Silgi boyutu: ${"%.0f".format(state.settings.defaultEraserSize)}",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Slider(state.settings.defaultEraserSize, viewModel::setDefaultEraserSize, valueRange = 12f..70f)
-            Text(
-                "Maksimum yakınlaştırma: ${"%.1f".format(state.settings.canvasMaxZoom)}x",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Slider(state.settings.canvasMaxZoom, viewModel::setCanvasMaxZoom, valueRange = 2f..8f)
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        SamsungSettingsSection("Backend") {
-            SettingSwitchRow(
-                Icons.Default.AutoAwesome,
-                "FastAPI pipeline",
-                "Tahtadan ekle akışında backend kullanılır",
-                state.settings.useBackendPipeline,
-                viewModel::setUseBackendPipeline
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                ModeButton("ADB tüneli", state.settings.backendBaseUrl == ADB_REVERSE_BACKEND_BASE_URL, Modifier.weight(1f)) {
-                    viewModel.setBackendBaseUrl(ADB_REVERSE_BACKEND_BASE_URL)
-                }
-                ModeButton("Wi-Fi IP", state.settings.backendBaseUrl == LAN_BACKEND_BASE_URL, Modifier.weight(1f)) {
-                    viewModel.setBackendBaseUrl(LAN_BACKEND_BASE_URL)
-                }
-                ModeButton("Emulator", state.settings.backendBaseUrl == EMULATOR_BACKEND_BASE_URL, Modifier.weight(1f)) {
-                    viewModel.setBackendBaseUrl(EMULATOR_BACKEND_BASE_URL)
-                }
-            }
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = state.settings.backendBaseUrl,
-                onValueChange = viewModel::setBackendBaseUrl,
-                label = { Text("FastAPI base URL") },
-                supportingText = { Text("ADB: $ADB_REVERSE_BACKEND_BASE_URL | Wi-Fi: $LAN_BACKEND_BASE_URL") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp)
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        SamsungSettingsSection("Geliştirici") {
-            SettingSwitchRow(Icons.Default.BugReport, "Debug modu", "Pipeline çıktıları ve tanılama", state.settings.debugMode, viewModel::setDebugMode)
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = state.settings.groqApiKey,
-                onValueChange = viewModel::setGroqApiKey,
-                label = { Text("Groq API anahtarı") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp)
-            )
-            Spacer(Modifier.height(10.dp))
-            Text("OCR motoru", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-            OcrEngineChoice.entries.forEach { choice ->
-                TextButton(onClick = { viewModel.setOcrEngineChoice(choice) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (state.settings.ocrEngineChoice == choice) "✓ ${choice.name}" else choice.name)
+        // Horizontal pill category selector
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            categories.forEachIndexed { index, name ->
+                val isSelected = activeCategoryIndex == index
+                Surface(
+                    onClick = { activeCategoryIndex = index },
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    border = if (isSelected) null else BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                ) {
+                    Text(
+                        text = name,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
-
         Spacer(Modifier.height(12.dp))
 
-        SamsungSettingsSection("Hakkında") {
-            SettingActionRow(Icons.Default.Info, "Uygulama bilgisi", "Sürüm ve proje bilgileri", onAbout)
-            SettingInfoRow(Icons.Default.Description, "Sürüm", "0.9.0")
+        when (activeCategoryIndex) {
+            0 -> {
+                // Genel & Görünüm
+                SamsungSettingsSection("Görünüm") {
+                    SettingInfoRow(Icons.Default.AutoAwesome, "Tema", "Beyaz Board2Note teması")
+                    SettingInfoRow(Icons.Default.Language, "Dil", "Türkçe")
+                    SettingSwitchRow(
+                        Icons.Default.Menu,
+                        "Alt gezinme çubuğu",
+                        "Samsung Notes tarzı için varsayılan kapalı",
+                        state.settings.showBottomNavigation,
+                        viewModel::setShowBottomNavigation
+                    )
+                }
+            }
+            1 -> {
+                // Çizim & Canvas
+                SamsungSettingsSection("Canvas ve kalem") {
+                    SettingSwitchRow(
+                        Icons.Default.Brush,
+                        "Parmakla çizim",
+                        "Stylus yokken canvas çizimini açık tutar",
+                        state.settings.allowFingerDrawing,
+                        viewModel::setAllowFingerDrawing
+                    )
+                    SettingSwitchRow(
+                        Icons.Default.Edit,
+                        "Stylus basıncı",
+                        "Destekli kalemlerde değişken kalınlık için hazır",
+                        state.settings.useStylusPressure,
+                        viewModel::setUseStylusPressure
+                    )
+                    SettingSwitchRow(
+                        Icons.Default.Check,
+                        "Avuç içi reddi",
+                        "S Pen cihazlarda yanlış temasları azaltmak için hazırlık",
+                        state.settings.palmRejection,
+                        viewModel::setPalmRejection
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Kalem kalınlığı: ${"%.0f".format(state.settings.defaultPenWidth)}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Slider(state.settings.defaultPenWidth, viewModel::setDefaultPenWidth, valueRange = 2f..28f, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+                    Text(
+                        "Silgi boyutu: ${"%.0f".format(state.settings.defaultEraserSize)}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Slider(state.settings.defaultEraserSize, viewModel::setDefaultEraserSize, valueRange = 12f..70f, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+                    Text(
+                        "Maksimum yakınlaştırma: ${"%.1f".format(state.settings.canvasMaxZoom)}x",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Slider(state.settings.canvasMaxZoom, viewModel::setCanvasMaxZoom, valueRange = 2f..8f, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+                }
+            }
+            2 -> {
+                // AI & Backend
+                SamsungSettingsSection("Not Yapılandırması") {
+                    SettingInfoRow(Icons.Default.Description, "Varsayılan kayıt", "Otomatik kaydetme açık")
+                    SettingSwitchRow(
+                        Icons.Default.AutoAwesome,
+                        "LLM ile düzenleme",
+                        "Not oluşturma tercihleri",
+                        state.settings.llmEnabled,
+                        viewModel::setLlmEnabled
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Model 2 önceliği",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        ModeButton("OCR", state.settings.enhancementMode == EnhancementMode.Ocr, Modifier.weight(1f)) {
+                            viewModel.setEnhancementMode(EnhancementMode.Ocr)
+                        }
+                        ModeButton("Beyaz sayfa", state.settings.enhancementMode == EnhancementMode.VisualNote, Modifier.weight(1f)) {
+                            viewModel.setEnhancementMode(EnhancementMode.VisualNote)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Tahta hassasiyeti: ${"%.2f".format(state.settings.threshold)}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Slider(state.settings.threshold, viewModel::setThreshold, valueRange = 0.45f..0.60f, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                SamsungSettingsSection("Backend") {
+                    SettingSwitchRow(
+                        Icons.Default.AutoAwesome,
+                        "FastAPI pipeline",
+                        "Tahtadan ekle akışında backend kullanılır",
+                        state.settings.useBackendPipeline,
+                        viewModel::setUseBackendPipeline
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        ModeButton("ADB tüneli", state.settings.backendBaseUrl == ADB_REVERSE_BACKEND_BASE_URL, Modifier.weight(1f)) {
+                            viewModel.setBackendBaseUrl(ADB_REVERSE_BACKEND_BASE_URL)
+                        }
+                        ModeButton("Wi-Fi IP", state.settings.backendBaseUrl == LAN_BACKEND_BASE_URL, Modifier.weight(1f)) {
+                            viewModel.setBackendBaseUrl(LAN_BACKEND_BASE_URL)
+                        }
+                        ModeButton("Emulator", state.settings.backendBaseUrl == EMULATOR_BACKEND_BASE_URL, Modifier.weight(1f)) {
+                            viewModel.setBackendBaseUrl(EMULATOR_BACKEND_BASE_URL)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = state.settings.backendBaseUrl,
+                        onValueChange = viewModel::setBackendBaseUrl,
+                        label = { Text("FastAPI base URL") },
+                        supportingText = { Text("ADB: $ADB_REVERSE_BACKEND_BASE_URL | Wi-Fi: $LAN_BACKEND_BASE_URL") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                }
+            }
+            3 -> {
+                // Sistem & Geliştirici
+                SamsungSettingsSection("Geliştirici") {
+                    SettingSwitchRow(Icons.Default.BugReport, "Debug modu", "Pipeline çıktıları ve tanılama", state.settings.debugMode, viewModel::setDebugMode)
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = state.settings.groqApiKey,
+                        onValueChange = viewModel::setGroqApiKey,
+                        label = { Text("Groq API anahtarı") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(14.dp)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text("OCR motoru", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                    OcrEngineChoice.entries.forEach { choice ->
+                        TextButton(onClick = { viewModel.setOcrEngineChoice(choice) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (state.settings.ocrEngineChoice == choice) "✓ ${choice.name}" else choice.name)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                SamsungSettingsSection("Hakkında & Bilgi") {
+                    SettingActionRow(Icons.Default.Info, "Uygulama bilgisi", "Sürüm ve proje bilgileri", onAbout)
+                    SettingInfoRow(Icons.Default.Description, "Sürüm", "0.9.0")
+                }
+            }
         }
         Spacer(Modifier.height(22.dp))
     }
@@ -5280,29 +5925,60 @@ private fun SettingsRowIcon(icon: androidx.compose.ui.graphics.vector.ImageVecto
 @Composable
 private fun AboutScreen() {
     ScreenColumn {
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(24.dp))
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(32.dp),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(110.dp),
+                shadowElevation = 4.dp
+            ) {
+                Canvas(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+                    drawRoundRect(Color.White, topLeft = Offset(size.width * 0.12f, size.height * 0.08f), size = Size(size.width * 0.72f, size.height * 0.72f))
+                    drawLine(Color(0xFF0F172A), Offset(size.width * 0.28f, size.height * 0.32f), Offset(size.width * 0.72f, size.height * 0.32f), strokeWidth = 5f)
+                    drawLine(Color(0xFF0F172A), Offset(size.width * 0.28f, size.height * 0.48f), Offset(size.width * 0.62f, size.height * 0.48f), strokeWidth = 5f)
+                    drawLine(Color(0xFF60A5FA), Offset(size.width * 0.54f, size.height * 0.72f), Offset(size.width * 0.88f, size.height * 0.96f), strokeWidth = 10f)
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "Board2Note",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                "Tahta Notları Asistanınız",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+            )
+            Spacer(Modifier.height(24.dp))
+        }
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(26.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 1.dp,
             shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            border = BorderStroke(1.dp, Color(0xFFEFF6FF))
         ) {
             Column(Modifier.padding(20.dp)) {
-                B2NoteLogo(compact = false)
-                Spacer(Modifier.height(18.dp))
                 Text(
                     "B2Note hakkında",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 Text(
                     "Tahta görüntülerini düzenlenebilir ders notlarına dönüştüren yerel-öncelikli Android uygulaması.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 22.sp
                 )
             }
         }
@@ -5312,7 +5988,7 @@ private fun AboutScreen() {
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 1.dp,
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            border = BorderStroke(1.dp, Color(0xFFEFF6FF))
         ) {
             Column(Modifier.padding(16.dp)) {
                 AboutInfoLine("Sürüm", "0.1.0 ürün prototipi", Icons.Default.Info)
@@ -5322,7 +5998,7 @@ private fun AboutScreen() {
                 AboutInfoLine("Gizlilik", "Notlar ve görseller cihazın uygulama alanında saklanır.", Icons.Default.Description, showDivider = false)
             }
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(24.dp))
     }
 }
 

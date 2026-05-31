@@ -502,6 +502,28 @@ class Board2NotesViewModel(
         }
     }
 
+    fun updateNoteCourse(id: String, courseName: String) {
+        viewModelScope.launch {
+            val current = container.noteRepository.getNote(id) ?: return@launch
+            runCatching {
+                container.noteRepository.updateContent(
+                    id = id,
+                    title = current.title,
+                    body = current.body,
+                    courseName = courseName
+                )
+            }.onSuccess { saved ->
+                _uiState.value = _uiState.value.copy(
+                    savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
+                    userMessage = "Not '${courseName.ifBlank { "Genel" }}' dersine taşındı."
+                )
+            }.onFailure { error ->
+                fail("Not taşınamadı: ${error.message}", error)
+            }
+        }
+    }
+
     fun archiveNote(id: String) {
         viewModelScope.launch {
             runCatching {
