@@ -21,7 +21,7 @@ interface NoteRepository {
         canvasBitmap: Bitmap? = null
     ): SavedNote
     suspend fun updateContent(id: String, title: String, body: String, courseName: String): SavedNote?
-    suspend fun updateCanvas(id: String, canvasBitmap: Bitmap): SavedNote?
+    suspend fun updateCanvas(id: String, canvasBitmap: Bitmap, pageIndex: Int = 0): SavedNote?
     suspend fun archiveNote(id: String): SavedNote?
     suspend fun unarchiveNote(id: String): SavedNote?
     suspend fun deleteNote(id: String)

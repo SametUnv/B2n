@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -317,7 +318,7 @@ class Board2NotesViewModel(
         }
     }
 
-    fun startScanForCurrentNote() {
+    fun startScanForCurrentNote(pageIndex: Int = 0) {
         val selected = _uiState.value.selectedSavedNote
         val id = selected?.id ?: _uiState.value.activeSavedNoteId
         if (id == null) {
@@ -328,6 +329,7 @@ class Board2NotesViewModel(
         _uiState.value = _uiState.value.copy(
             pendingScanNoteId = id,
             pendingScanNoteType = noteType,
+            pendingScanPageIndex = pageIndex,
             screen = AppScreen.Capture,
             userMessage = "Tahtayı seçin; çıktı bu nota eklenecek."
         )
@@ -655,12 +657,21 @@ class Board2NotesViewModel(
     ): SavedNote {
         val current = container.noteRepository.getNote(noteId) ?: error("Hedef not bulunamadı.")
         return if (noteType == NoteType.Canvas) {
-            val base = current.canvasImagePath?.let { BitmapFactory.decodeFile(it) }
-                ?: CanvasNoteComposer.createBlankCanvas()
+            val pageIndex = _uiState.value.pendingScanPageIndex ?: 0
+            val baseFile = if (pageIndex == 0) {
+                current.canvasImagePath?.let { File(it) }
+            } else {
+                current.canvasImagePath?.let { File(File(it).parentFile, "canvas_page_${pageIndex}.png") }
+            }
+            val base = if (baseFile != null && baseFile.exists()) {
+                BitmapFactory.decodeFile(baseFile.absolutePath)
+            } else {
+                CanvasNoteComposer.createBlankCanvas()
+            }
             val inkSource = result.whiteCanvasBitmap ?: result.ocrBitmap ?: result.cropBitmap
                 ?: error("Backend canvas çıktısı üretmedi.")
             val canvas = CanvasNoteComposer.composeInkOnCanvas(base, inkSource)
-            val canvasSaved = container.noteRepository.updateCanvas(noteId, canvas)
+            val canvasSaved = container.noteRepository.updateCanvas(noteId, canvas, pageIndex)
                 ?: error("Canvas notu güncellenemedi.")
             val optionalText = result.body.ifBlank { result.ocrText }.trim()
             if (optionalText.isNotBlank() && canvasSaved.body.substringBefore("[DrawingData:").isBlank()) {

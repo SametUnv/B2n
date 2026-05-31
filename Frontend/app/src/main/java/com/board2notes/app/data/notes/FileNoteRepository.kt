@@ -133,14 +133,16 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
             }
         }
 
-    override suspend fun updateCanvas(id: String, canvasBitmap: Bitmap): SavedNote? = withContext(Dispatchers.IO) {
+    override suspend fun updateCanvas(id: String, canvasBitmap: Bitmap, pageIndex: Int): SavedNote? = withContext(Dispatchers.IO) {
         mutex.withLock {
             val notes = readIndex()
             val current = notes.firstOrNull { it.id == id } ?: return@withLock null
             val noteDir = File(notesRoot, id).apply { mkdirs() }
+            val filename = if (pageIndex == 0) "canvas.png" else "canvas_page_${pageIndex}.png"
+            val filePath = writeBitmap(canvasBitmap, File(noteDir, filename))
             val updated = current.copy(
                 noteType = NoteType.Canvas,
-                canvasImagePath = writeBitmap(canvasBitmap, File(noteDir, "canvas.png")),
+                canvasImagePath = if (pageIndex == 0) filePath else current.canvasImagePath,
                 updatedAtEpochMs = System.currentTimeMillis()
             )
             writeIndex(notes.map { if (it.id == id) updated else it })

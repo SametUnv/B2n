@@ -678,8 +678,8 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     SamsungStyleNoteEditorScreen(
                         state = state,
                         viewModel = viewModel,
-                        onScan = {
-                            viewModel.startScanForCurrentNote()
+                        onScan = { pageIndex ->
+                            viewModel.startScanForCurrentNote(pageIndex)
                             navController.navigate(Route.Capture)
                         },
                         onNotes = {
@@ -784,46 +784,22 @@ private fun Board2NoteNavigationDrawer(
                 )
                 .padding(horizontal = 16.dp, vertical = 18.dp)
         ) {
-            // Premium Card Header
-            Surface(
+            // Centered Premium B2N Logo
+            Box(
                 modifier = Modifier
-                    .padding(vertical = 12.dp)
-                    .fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                color = Color.White,
-                border = BorderStroke(1.dp, Color(0xFFEFF6FF)),
-                shadowElevation = 2.dp
+                    .fillMaxWidth()
+                    .padding(vertical = 24.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text(
-                            "Board2Note",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            "Ders Notları Asistanı",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                Image(
+                    painter = androidx.compose.ui.res.painterResource(id = com.board2notes.app.R.drawable.b2n_logo),
+                    contentDescription = "B2N Logo",
+                    modifier = Modifier
+                        .size(120.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                )
             }
-
+            
             Spacer(Modifier.height(16.dp))
 
             mainDrawerDestinations.forEach { destination ->
@@ -3999,7 +3975,7 @@ private fun NoteEditorScreen(
 private fun SamsungStyleNoteEditorScreen(
     state: Board2NotesUiState,
     viewModel: Board2NotesViewModel,
-    onScan: () -> Unit,
+    onScan: (Int) -> Unit,
     onNotes: () -> Unit
 ) {
     val note = state.note ?: return
@@ -4037,10 +4013,7 @@ private fun SamsungStyleNoteEditorScreen(
     var newCourseName by remember { mutableStateOf("") }
     var isPinchZoomActive by remember { mutableStateOf(false) }
     var saveStatus by remember(state.activeSavedNoteId) { mutableStateOf("Kaydedildi") }
-    val canvasBitmap = remember(savedNote?.canvasImagePath) {
-        savedNote?.canvasImagePath?.let { BitmapFactory.decodeFile(it) }
-    }
-    val canvasImage = remember(canvasBitmap) { canvasBitmap?.asImageBitmap() }
+
     val existingCourses = remember(state.savedNotes) {
         state.savedNotes.map { it.courseName }.filter { it.isNotBlank() }.distinct().sorted()
     }
@@ -4050,6 +4023,20 @@ private fun SamsungStyleNoteEditorScreen(
     val primaryCanvasColor = MaterialTheme.colorScheme.primary
     val safePageIndex = currentPageIndex.coerceIn(0, (canvasPages.size - 1).coerceAtLeast(0))
     val canvasPaths = canvasPages.getOrElse(safePageIndex) { emptyList() }
+    val canvasImage = remember(savedNote?.canvasImagePath, safePageIndex) {
+        val id = state.activeSavedNoteId ?: return@remember null
+        val noteDir = File(context.filesDir, "notes/$id")
+        val pageFile = if (safePageIndex == 0) {
+            savedNote?.canvasImagePath?.let { File(it) } ?: File(noteDir, "canvas.png")
+        } else {
+            File(noteDir, "canvas_page_${safePageIndex}.png")
+        }
+        if (pageFile.exists()) {
+            BitmapFactory.decodeFile(pageFile.absolutePath)?.asImageBitmap()
+        } else {
+            null
+        }
+    }
 
     fun setCanvasDocument(pages: List<List<DrawingPath>>, pageIndex: Int = safePageIndex) {
         val safePages = pages.ifEmpty { listOf(emptyList()) }
@@ -4134,7 +4121,7 @@ private fun SamsungStyleNoteEditorScreen(
                                 showAddMenu = false
                                 viewModel.updateNote(title, body, course)
                                 viewModel.autoSaveCurrentNote()
-                                onScan()
+                                onScan(safePageIndex)
                             }
                         )
                         DropdownMenuItem(
@@ -4202,7 +4189,7 @@ private fun SamsungStyleNoteEditorScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                course.ifBlank { "Genel" },
+                if (course.isBlank() || course.equals("Genel", ignoreCase = true)) "" else course,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -5925,24 +5912,19 @@ private fun SettingsRowIcon(icon: androidx.compose.ui.graphics.vector.ImageVecto
 @Composable
 private fun AboutScreen() {
     ScreenColumn {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(32.dp))
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(32.dp),
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(110.dp),
-                shadowElevation = 4.dp
-            ) {
-                Canvas(modifier = Modifier.fillMaxSize().padding(14.dp)) {
-                    drawRoundRect(Color.White, topLeft = Offset(size.width * 0.12f, size.height * 0.08f), size = Size(size.width * 0.72f, size.height * 0.72f))
-                    drawLine(Color(0xFF0F172A), Offset(size.width * 0.28f, size.height * 0.32f), Offset(size.width * 0.72f, size.height * 0.32f), strokeWidth = 5f)
-                    drawLine(Color(0xFF0F172A), Offset(size.width * 0.28f, size.height * 0.48f), Offset(size.width * 0.62f, size.height * 0.48f), strokeWidth = 5f)
-                    drawLine(Color(0xFF60A5FA), Offset(size.width * 0.54f, size.height * 0.72f), Offset(size.width * 0.88f, size.height * 0.96f), strokeWidth = 10f)
-                }
-            }
+            // Centered circular B2N Logo
+            Image(
+                painter = painterResource(id = com.board2notes.app.R.drawable.b2n_logo),
+                contentDescription = "B2N Logo",
+                modifier = Modifier
+                    .size(110.dp)
+                    .clip(androidx.compose.foundation.shape.CircleShape)
+            )
             Spacer(Modifier.height(18.dp))
             Text(
                 "Board2Note",
@@ -5950,52 +5932,29 @@ private fun AboutScreen() {
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground
             )
+            Spacer(Modifier.height(12.dp))
             Text(
-                "Tahta Notları Asistanınız",
+                "Tahta görüntülerini yapay zeka desteğiyle düzenlenebilir ders notlarına dönüştüren premium Android asistanınız.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 22.sp,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
             )
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(28.dp))
         }
 
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(26.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 1.dp,
-            shadowElevation = 2.dp,
-            border = BorderStroke(1.dp, Color(0xFFEFF6FF))
-        ) {
-            Column(Modifier.padding(20.dp)) {
-                Text(
-                    "B2Note hakkında",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Tahta görüntülerini düzenlenebilir ders notlarına dönüştüren yerel-öncelikli Android uygulaması.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    lineHeight = 22.sp
-                )
-            }
-        }
-        Spacer(Modifier.height(16.dp))
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 1.dp,
-            border = BorderStroke(1.dp, Color(0xFFEFF6FF))
+            border = BorderStroke(1.dp, Color(0xFFEFF6FF)),
+            shadowElevation = 2.dp
         ) {
             Column(Modifier.padding(16.dp)) {
-                AboutInfoLine("Sürüm", "0.1.0 ürün prototipi", Icons.Default.Info)
-                AboutInfoLine("Model 1", "ONNX tahta/projeksiyon segmentasyonu", Icons.Default.Tune)
-                AboutInfoLine("Model 2", "ONNX iyileştirme, OCR görüntüsü ve beyaz sayfa çıktısı", Icons.Default.AutoAwesome)
-                AboutInfoLine("OCR", "ML Kit Text Recognition v2 Latin", Icons.Default.TextFields)
-                AboutInfoLine("Gizlilik", "Notlar ve görseller cihazın uygulama alanında saklanır.", Icons.Default.Description, showDivider = false)
+                AboutInfoLine("Sürüm", "0.9.3", Icons.Default.Info)
+                AboutInfoLine("Gizlilik", "Notlar ve görseller cihazınızın yerel depolama alanında güvenle saklanır.", Icons.Default.Description, showDivider = false)
             }
         }
         Spacer(Modifier.height(24.dp))

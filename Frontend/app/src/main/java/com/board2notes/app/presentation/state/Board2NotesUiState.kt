@@ -45,5 +45,6 @@ data class Board2NotesUiState(
     val userMessage: String? = null,
     val debugFiles: List<File> = emptyList(),
     val pendingScanNoteId: String? = null,
-    val pendingScanNoteType: NoteType? = null
+    val pendingScanNoteType: NoteType? = null,
+    val pendingScanPageIndex: Int? = null
 )
