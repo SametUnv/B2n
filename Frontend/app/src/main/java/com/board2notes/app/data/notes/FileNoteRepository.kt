@@ -23,13 +23,13 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
 
     override suspend fun listNotes(): List<SavedNote> = withContext(Dispatchers.IO) {
         mutex.withLock {
-            readIndex().filterNot { it.isArchived }.sortedByDescending { it.updatedAtEpochMs }
+            readIndex().filter { !it.isArchived && !it.isDeleted }.sortedByDescending { it.updatedAtEpochMs }
         }
     }
 
     override suspend fun listArchivedNotes(): List<SavedNote> = withContext(Dispatchers.IO) {
         mutex.withLock {
-            readIndex().filter { it.isArchived }.sortedByDescending { it.updatedAtEpochMs }
+            readIndex().filter { it.isArchived && !it.isDeleted }.sortedByDescending { it.updatedAtEpochMs }
         }
     }
 
@@ -152,8 +152,10 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
 
     override suspend fun deleteNote(id: String): Unit = withContext(Dispatchers.IO) {
         mutex.withLock {
-            writeIndex(readIndex().filterNot { it.id == id })
-            File(notesRoot, id).deleteRecursively()
+            val notes = readIndex()
+            val current = notes.firstOrNull { it.id == id } ?: return@withLock
+            val updated = current.copy(isDeleted = true, updatedAtEpochMs = System.currentTimeMillis())
+            writeIndex(notes.map { if (it.id == id) updated else it })
         }
     }
 
@@ -214,6 +216,8 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
         .put("noteType", noteType.name)
         .put("canvasImagePath", canvasImagePath ?: JSONObject.NULL)
         .put("isArchived", isArchived)
+        .put("isFavorite", isFavorite)
+        .put("isDeleted", isDeleted)
 
     private fun JSONObject.toSavedNote(): SavedNote = SavedNote(
         id = getString("id"),
@@ -231,9 +235,61 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
             runCatching { NoteType.valueOf(raw) }.getOrDefault(NoteType.Text)
         },
         canvasImagePath = nullableString("canvasImagePath"),
-        isArchived = optBoolean("isArchived", false)
+        isArchived = optBoolean("isArchived", false),
+        isFavorite = optBoolean("isFavorite", false),
+        isDeleted = optBoolean("isDeleted", false)
     )
 
     private fun JSONObject.nullableString(name: String): String? =
         if (isNull(name)) null else optString(name).takeIf { it.isNotBlank() }
+
+    override suspend fun listDeletedNotes(): List<SavedNote> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            readIndex().filter { it.isDeleted }.sortedByDescending { it.updatedAtEpochMs }
+        }
+    }
+
+    override suspend fun listFavoriteNotes(): List<SavedNote> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            readIndex().filter { it.isFavorite && !it.isDeleted && !it.isArchived }.sortedByDescending { it.updatedAtEpochMs }
+        }
+    }
+
+    override suspend fun toggleFavorite(id: String): SavedNote? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val notes = readIndex()
+            val current = notes.firstOrNull { it.id == id } ?: return@withLock null
+            val updated = current.copy(isFavorite = !current.isFavorite, updatedAtEpochMs = System.currentTimeMillis())
+            writeIndex(notes.map { if (it.id == id) updated else it })
+            updated
+        }
+    }
+
+    override suspend fun restoreNote(id: String): SavedNote? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val notes = readIndex()
+            val current = notes.firstOrNull { it.id == id } ?: return@withLock null
+            val updated = current.copy(isDeleted = false, updatedAtEpochMs = System.currentTimeMillis())
+            writeIndex(notes.map { if (it.id == id) updated else it })
+            updated
+        }
+    }
+
+    override suspend fun deleteNotePermanently(id: String): Unit = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            writeIndex(readIndex().filterNot { it.id == id })
+            File(notesRoot, id).deleteRecursively()
+        }
+    }
+
+    override suspend fun emptyTrash(): Unit = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val notes = readIndex()
+            val deletedNotes = notes.filter { it.isDeleted }
+            deletedNotes.forEach {
+                File(notesRoot, it.id).deleteRecursively()
+            }
+            writeIndex(notes.filterNot { it.isDeleted })
+        }
+    }
 }

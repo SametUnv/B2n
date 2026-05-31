@@ -32,6 +32,8 @@ class SettingsRepository(private val context: Context) {
         val defaultEraserSize = floatPreferencesKey("default_eraser_size")
         val canvasMinZoom = floatPreferencesKey("canvas_min_zoom")
         val canvasMaxZoom = floatPreferencesKey("canvas_max_zoom")
+        val inkDarkness = floatPreferencesKey("ink_darkness")
+        val useDarkTheme = booleanPreferencesKey("use_dark_theme")
     }
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
@@ -54,7 +56,9 @@ class SettingsRepository(private val context: Context) {
             defaultPenWidth = prefs[Keys.defaultPenWidth] ?: 5f,
             defaultEraserSize = prefs[Keys.defaultEraserSize] ?: 32f,
             canvasMinZoom = prefs[Keys.canvasMinZoom] ?: 0.5f,
-            canvasMaxZoom = prefs[Keys.canvasMaxZoom] ?: 5f
+            canvasMaxZoom = prefs[Keys.canvasMaxZoom] ?: 5f,
+            inkDarkness = prefs[Keys.inkDarkness] ?: 0.6f,
+            useDarkTheme = prefs[Keys.useDarkTheme] ?: false
         )
     }
 
@@ -133,6 +137,10 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.defaultEraserSize] = value.coerceIn(12f, 70f) }
     }
 
+    suspend fun setInkDarkness(value: Float) {
+        context.settingsDataStore.edit { it[Keys.inkDarkness] = value.coerceIn(0f, 1f) }
+    }
+
     suspend fun setCanvasZoomRange(minZoom: Float, maxZoom: Float) {
         val safeMin = minZoom.coerceIn(0.35f, 1f)
         val safeMax = maxZoom.coerceIn(2f, 8f).coerceAtLeast(safeMin + 1f)
@@ -140,5 +148,9 @@ class SettingsRepository(private val context: Context) {
             it[Keys.canvasMinZoom] = safeMin
             it[Keys.canvasMaxZoom] = safeMax
         }
+    }
+
+    suspend fun setUseDarkTheme(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.useDarkTheme] = value }
     }
 }

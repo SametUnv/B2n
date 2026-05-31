@@ -23,6 +23,7 @@ class Settings:
     model2_overlap: int = 64
     model2_batch_size: int = 1
     model2_max_input_side: int = 1536
+    model2_ink_darkness: float = 0.55
     perspective_max_output_side: int = 2400
     ocr_lang: str = "tr"
 
@@ -62,6 +63,7 @@ def load_settings() -> Settings:
         use_amp=use_amp,
         model2_batch_size=int(os.getenv("B2N_MODEL2_BATCH_SIZE", "4" if device.startswith("cuda") else "1")),
         model2_max_input_side=int(os.getenv("B2N_MODEL2_MAX_INPUT_SIDE", "1536")),
+        model2_ink_darkness=float(os.getenv("B2N_INK_DARKNESS", "0.55")),
         ocr_lang=os.getenv("B2N_OCR_LANG", "tr"),
     )
 

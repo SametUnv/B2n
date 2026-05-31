@@ -38,6 +38,8 @@ data class Board2NotesUiState(
     val activeSavedNoteId: String? = null,
     val savedNotes: List<SavedNote> = emptyList(),
     val archivedNotes: List<SavedNote> = emptyList(),
+    val deletedNotes: List<SavedNote> = emptyList(),
+    val favoriteNotes: List<SavedNote> = emptyList(),
     val selectedSavedNote: SavedNote? = null,
     val settings: AppSettings = AppSettings(),
     val pipelineState: PipelineState = PipelineState.Idle,
@@ -46,5 +48,8 @@ data class Board2NotesUiState(
     val debugFiles: List<File> = emptyList(),
     val pendingScanNoteId: String? = null,
     val pendingScanNoteType: NoteType? = null,
-    val pendingScanPageIndex: Int? = null
+    val pendingScanPageIndex: Int? = null,
+    // Tahta çıktısı koyulaştırılıp asset olarak yazıldıktan sonra, editörün canvas'a
+    // merkezi/seçili ImageElement olarak yerleştireceği asset dosya adı.
+    val pendingCanvasImageAsset: String? = null
 )

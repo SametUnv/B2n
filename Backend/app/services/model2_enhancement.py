@@ -82,7 +82,7 @@ class Model2EnhancementService:
         restored = to_uint8(restored01)
         ocr_enhanced = to_uint8(ocr01)
         text_mask_image = probability_to_gray(mask)
-        white_canvas = make_white_canvas(ocr01, mask)
+        white_canvas = make_white_canvas(ocr01, mask, ink_darkness=self.settings.model2_ink_darkness)
         timings["postprocess_ms"] = (time.perf_counter() - t0) * 1000.0
 
         return Model2Result(
@@ -244,9 +244,31 @@ def to_uint8(image01: np.ndarray) -> np.ndarray:
     return np.clip(image01 * 255.0, 0, 255).round().astype(np.uint8)
 
 
-def make_white_canvas(ocr01: np.ndarray, mask: np.ndarray, threshold: float = 0.45) -> np.ndarray:
-    alpha = (mask > threshold).astype(np.float32)
-    alpha = cv2.GaussianBlur(alpha, (5, 5), 0)
+def make_white_canvas(
+    ocr01: np.ndarray,
+    mask: np.ndarray,
+    threshold: float = 0.40,
+    ink_darkness: float = 0.55,
+) -> np.ndarray:
+    """Beyaz tahta tuvali üret: arka plan saf beyaz, yazılar belirgin koyu.
+
+    ``ink_darkness`` (0..1) mürekkebi koyulaştırma gücüdür. Beyaz nokta + gamma eğrisi ile
+    beyaz arka plan korunurken gri/koyu mürekkep siyaha doğru çekilir; yumuşak (soft) alfa
+    maskesi ince/sönük yazıları da yakalar ama arka plan gürültüsünü içeri almaz.
+    """
+    strength = float(np.clip(ink_darkness, 0.0, 1.0))
+
+    # Yumuşak metin alfası: eşiğin biraz altından başlayan rampa (ince yazıları yakalar).
+    lo = max(0.05, threshold - 0.15)
+    hi = threshold + 0.15
+    alpha = np.clip((mask - lo) / max(1e-3, hi - lo), 0.0, 1.0).astype(np.float32)
+    alpha = cv2.GaussianBlur(alpha, (3, 3), 0)
+
+    # Mürekkebi koyulaştır: beyaz noktası + gamma (beyaz beyaz kalır, mürekkep koyulaşır).
+    gamma = 1.0 + 2.0 * strength
+    white_point = 0.92
+    ink = np.clip(np.clip(ocr01, 0.0, 1.0) / white_point, 0.0, 1.0) ** gamma
+
     white = np.ones_like(ocr01, dtype=np.float32)
-    canvas = white * (1.0 - alpha[..., None]) + np.clip(ocr01, 0, 1) * alpha[..., None]
+    canvas = white * (1.0 - alpha[..., None]) + ink * alpha[..., None]
     return to_uint8(canvas)

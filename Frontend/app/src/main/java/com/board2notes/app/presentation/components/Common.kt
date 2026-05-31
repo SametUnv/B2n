@@ -171,22 +171,43 @@ fun SectionTitle(title: String, subtitle: String? = null) {
 
 @Composable
 fun StatusBanner(message: String, busy: Boolean = false) {
-    Surface(
+    Box(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(8.dp)
+        contentAlignment = Alignment.Center
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.90f),
+            shape = RoundedCornerShape(999.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+            shadowElevation = 3.dp,
+            modifier = Modifier.padding(vertical = 8.dp)
         ) {
-            if (busy) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Default.HourglassTop, contentDescription = null, modifier = Modifier.size(18.dp))
+            Row(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (busy) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.HourglassTop,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             }
-            Spacer(Modifier.width(10.dp))
-            Text(text = message, style = MaterialTheme.typography.bodyMedium)
         }
     }
 }

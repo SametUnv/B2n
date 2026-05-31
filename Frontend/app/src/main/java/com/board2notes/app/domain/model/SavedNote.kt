@@ -19,7 +19,9 @@ data class SavedNote(
     val whitePageImagePath: String?,
     val noteType: NoteType = NoteType.Text,
     val canvasImagePath: String? = null,
-    val isArchived: Boolean = false
+    val isArchived: Boolean = false,
+    val isFavorite: Boolean = false,
+    val isDeleted: Boolean = false
 ) {
     val preview: String
         get() = body.substringBefore("[DrawingData:")

@@ -2,7 +2,6 @@ package com.board2notes.app.presentation.state
 
 import android.app.Application
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
@@ -12,9 +11,9 @@ import androidx.lifecycle.viewModelScope
 import com.board2notes.app.AppContainer
 import com.board2notes.app.Board2NotesApplication
 import com.board2notes.app.data.backend.BackendPipelineResult
-import com.board2notes.app.data.image.CanvasNoteComposer
 import com.board2notes.app.data.image.BitmapLoader
 import com.board2notes.app.data.image.BitmapPerspectiveCorrector
+import com.board2notes.app.data.image.InkDarkener
 import com.board2notes.app.data.settings.OcrEngineChoice
 import com.board2notes.app.domain.model.EnhancementMode
 import com.board2notes.app.domain.model.FormattedNote
@@ -29,8 +28,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+private data class AppliedResult(val note: SavedNote, val canvasInsertAsset: String?)
 
 class Board2NotesViewModel(
     application: Application,
@@ -59,7 +61,9 @@ class Board2NotesViewModel(
         _uiState.value = Board2NotesUiState(
             settings = _uiState.value.settings,
             savedNotes = _uiState.value.savedNotes,
-            archivedNotes = _uiState.value.archivedNotes
+            archivedNotes = _uiState.value.archivedNotes,
+            deletedNotes = _uiState.value.deletedNotes,
+            favoriteNotes = _uiState.value.favoriteNotes
         )
     }
 
@@ -293,11 +297,21 @@ class Board2NotesViewModel(
         }
     }
 
-    fun createBlankNote(noteType: NoteType, onCreated: (() -> Unit)? = null) {
+    fun createBlankNote(noteType: NoteType, courseName: String = "", onCreated: (() -> Unit)? = null) {
         viewModelScope.launch {
             busy(PipelineState.Idle, AppScreen.Note)
             runCatching {
-                container.noteRepository.createBlank(noteType)
+                val saved = container.noteRepository.createBlank(noteType)
+                if (courseName.isNotBlank()) {
+                    container.noteRepository.updateContent(
+                        id = saved.id,
+                        title = saved.title,
+                        body = saved.body,
+                        courseName = courseName
+                    ) ?: saved
+                } else {
+                    saved
+                }
             }.onSuccess { saved ->
                 _uiState.value = _uiState.value.copy(
                     note = saved.toFormattedNote(),
@@ -358,7 +372,8 @@ class Board2NotesViewModel(
                     runOcr = noteType == NoteType.Text
                 )
                 applyBackendResultToNote(noteId, noteType, result)
-            }.onSuccess { saved ->
+            }.onSuccess { applied ->
+                val saved = applied.note
                 _uiState.value = _uiState.value.copy(
                     selectedSavedNote = saved,
                     activeSavedNoteId = saved.id,
@@ -374,10 +389,11 @@ class Board2NotesViewModel(
                     ),
                     pendingScanNoteId = null,
                     pendingScanNoteType = null,
+                    pendingCanvasImageAsset = applied.canvasInsertAsset,
                     screen = AppScreen.Note,
                     isBusy = false,
                     userMessage = if (saved.noteType == NoteType.Canvas) {
-                        "Model çıktısı canvas notuna eklendi."
+                        "Tahta çıktısı not içine eklendi; konumlandırıp boyutlandırabilirsin."
                     } else {
                         "OCR metni yazı notuna eklendi."
                     }
@@ -429,7 +445,9 @@ class Board2NotesViewModel(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 savedNotes = loadNotesSafely(),
-                archivedNotes = loadArchivedNotesSafely()
+                archivedNotes = loadArchivedNotesSafely(),
+                deletedNotes = loadDeletedNotesSafely(),
+                favoriteNotes = loadFavoriteNotesSafely()
             )
         }
     }
@@ -654,36 +672,18 @@ class Board2NotesViewModel(
         noteId: String,
         noteType: NoteType,
         result: BackendPipelineResult
-    ): SavedNote {
+    ): AppliedResult {
         val current = container.noteRepository.getNote(noteId) ?: error("Hedef not bulunamadı.")
         return if (noteType == NoteType.Canvas) {
-            val pageIndex = _uiState.value.pendingScanPageIndex ?: 0
-            val baseFile = if (pageIndex == 0) {
-                current.canvasImagePath?.let { File(it) }
-            } else {
-                current.canvasImagePath?.let { File(File(it).parentFile, "canvas_page_${pageIndex}.png") }
-            }
-            val base = if (baseFile != null && baseFile.exists()) {
-                BitmapFactory.decodeFile(baseFile.absolutePath)
-            } else {
-                CanvasNoteComposer.createBlankCanvas()
-            }
-            val inkSource = result.whiteCanvasBitmap ?: result.ocrBitmap ?: result.cropBitmap
+            val raw = result.whiteCanvasBitmap ?: result.ocrBitmap ?: result.cropBitmap
                 ?: error("Backend canvas çıktısı üretmedi.")
-            val canvas = CanvasNoteComposer.composeInkOnCanvas(base, inkSource)
-            val canvasSaved = container.noteRepository.updateCanvas(noteId, canvas, pageIndex)
-                ?: error("Canvas notu güncellenemedi.")
-            val optionalText = result.body.ifBlank { result.ocrText }.trim()
-            if (optionalText.isNotBlank() && canvasSaved.body.substringBefore("[DrawingData:").isBlank()) {
-                container.noteRepository.updateContent(
-                    id = noteId,
-                    title = canvasSaved.title,
-                    body = optionalText,
-                    courseName = canvasSaved.courseName
-                ) ?: canvasSaved
-            } else {
-                canvasSaved
+            val darkened = withContext(Dispatchers.Default) {
+                InkDarkener.darken(raw, _uiState.value.settings.inkDarkness)
             }
+            val asset = "img_${UUID.randomUUID()}.png"
+            withContext(Dispatchers.IO) { writeBitmapAsset(noteId, asset, darkened) }
+            // Not gövdesi değişmez; görsel editörde merkezi/seçili ImageElement olarak eklenir.
+            AppliedResult(current, asset)
         } else {
             val text = result.body.ifBlank { result.ocrText }.trim()
             val mergedBody = buildString {
@@ -698,13 +698,29 @@ class Board2NotesViewModel(
             } else {
                 current.title
             }
-            container.noteRepository.updateContent(
+            val updated = container.noteRepository.updateContent(
                 id = noteId,
                 title = title,
                 body = mergedBody,
                 courseName = current.courseName
             ) ?: error("Yazı notu güncellenemedi.")
+            AppliedResult(updated, null)
         }
+    }
+
+    private fun writeBitmapAsset(noteId: String, asset: String, bitmap: Bitmap) {
+        val dir = File(getApplication<Application>().filesDir, "notes/$noteId").apply { mkdirs() }
+        File(dir, asset).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
+    fun clearPendingCanvasImage() {
+        if (_uiState.value.pendingCanvasImageAsset != null) {
+            _uiState.value = _uiState.value.copy(pendingCanvasImageAsset = null)
+        }
+    }
+
+    fun setInkDarkness(value: Float) {
+        viewModelScope.launch { container.settingsRepository.setInkDarkness(value) }
     }
 
     private suspend fun loadNotesSafely(): List<SavedNote> =
@@ -712,6 +728,49 @@ class Board2NotesViewModel(
 
     private suspend fun loadArchivedNotesSafely(): List<SavedNote> =
         runCatching { container.noteRepository.listArchivedNotes() }.getOrDefault(emptyList())
+
+    private suspend fun loadDeletedNotesSafely(): List<SavedNote> =
+        runCatching { container.noteRepository.listDeletedNotes() }.getOrDefault(emptyList())
+
+    private suspend fun loadFavoriteNotesSafely(): List<SavedNote> =
+        runCatching { container.noteRepository.listFavoriteNotes() }.getOrDefault(emptyList())
+
+    fun toggleFavorite(noteId: String) {
+        viewModelScope.launch {
+            container.noteRepository.toggleFavorite(noteId)
+            refreshNotes()
+        }
+    }
+
+    fun restoreNote(noteId: String) {
+        viewModelScope.launch {
+            container.noteRepository.restoreNote(noteId)
+            refreshNotes()
+            _uiState.value = _uiState.value.copy(userMessage = "Not geri yüklendi.")
+        }
+    }
+
+    fun deleteNotePermanently(noteId: String) {
+        viewModelScope.launch {
+            container.noteRepository.deleteNotePermanently(noteId)
+            refreshNotes()
+            _uiState.value = _uiState.value.copy(userMessage = "Not kalıcı olarak silindi.")
+        }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch {
+            container.noteRepository.emptyTrash()
+            refreshNotes()
+            _uiState.value = _uiState.value.copy(userMessage = "Çöp kutusu boşaltıldı.")
+        }
+    }
+
+    fun setUseDarkTheme(value: Boolean) {
+        viewModelScope.launch {
+            container.settingsRepository.setUseDarkTheme(value)
+        }
+    }
 
     private fun SavedNote.toFormattedNote(): FormattedNote = FormattedNote(
         title = title,

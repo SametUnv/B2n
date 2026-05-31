@@ -25,4 +25,10 @@ interface NoteRepository {
     suspend fun archiveNote(id: String): SavedNote?
     suspend fun unarchiveNote(id: String): SavedNote?
     suspend fun deleteNote(id: String)
+    suspend fun listDeletedNotes(): List<SavedNote>
+    suspend fun listFavoriteNotes(): List<SavedNote>
+    suspend fun toggleFavorite(id: String): SavedNote?
+    suspend fun restoreNote(id: String): SavedNote?
+    suspend fun deleteNotePermanently(id: String)
+    suspend fun emptyTrash()
 }

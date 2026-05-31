@@ -30,5 +30,7 @@ data class AppSettings(
     val defaultPenWidth: Float = 5f,
     val defaultEraserSize: Float = 32f,
     val canvasMinZoom: Float = 0.5f,
-    val canvasMaxZoom: Float = 5f
+    val canvasMaxZoom: Float = 5f,
+    val inkDarkness: Float = 0.6f,
+    val useDarkTheme: Boolean = false
 )
