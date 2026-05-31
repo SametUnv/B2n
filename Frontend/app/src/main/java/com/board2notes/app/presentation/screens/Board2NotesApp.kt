@@ -21,6 +21,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +77,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -85,9 +87,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -106,6 +112,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -118,11 +125,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -160,6 +171,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.sqrt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
@@ -178,6 +190,7 @@ import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
@@ -217,6 +230,24 @@ private object Route {
     const val Folder = "folder"
 }
 
+private data class NavigationDestination(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+    val topLevel: Boolean = true
+)
+
+private val mainDrawerDestinations = listOf(
+    NavigationDestination(Route.Home, "Ana Sayfa", Icons.Default.Home),
+    NavigationDestination(Route.Notes, "Notlar", Icons.Default.Folder),
+    NavigationDestination(Route.Capture, "Tahtadan Ekle", Icons.Default.CameraAlt, topLevel = false),
+    NavigationDestination(Route.Archive, "Arşiv", Icons.Default.Folder, topLevel = false),
+    NavigationDestination(Route.About, "Hakkında", Icons.Default.Info, topLevel = false)
+)
+
+private val settingsDrawerDestination =
+    NavigationDestination(Route.Settings, "Ayarlar", Icons.Default.Settings)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun Board2NotesApp(viewModel: Board2NotesViewModel) {
@@ -230,6 +261,8 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
     var showCreateNoteSheet by remember { mutableStateOf(false) }
     var showStartupLoading by remember { mutableStateOf(true) }
     var showTopMenu by remember { mutableStateOf(false) }
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         delay(650)
@@ -290,6 +323,25 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
         )
     }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            Board2NoteNavigationDrawer(
+                currentRoute = route,
+                state = state,
+                onDestinationClick = { destination ->
+                    coroutineScope.launch { drawerState.close() }
+                    if (destination.topLevel) {
+                        navigateTopLevel(destination.route, navController, viewModel)
+                    } else {
+                        navController.navigate(destination.route) {
+                            launchSingleTop = true
+                        }
+                    }
+                }
+            )
+        }
+    ) {
     Scaffold(
         snackbarHost = {
             SnackbarHost(snackbarHostState) { data ->
@@ -354,8 +406,10 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                         IconButton(onClick = { navController.popBackStack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
                         }
-                    } else if (route == Route.Home && !isSearchingHome) {
-                        Spacer(modifier = Modifier.width(48.dp))
+                    } else {
+                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                            Icon(Icons.Default.Menu, contentDescription = "Menü")
+                        }
                     }
                 },
                 actions = {
@@ -455,26 +509,15 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     top = padding.calculateTopPadding(),
                     bottom = if (topLevel) 0.dp else padding.calculateBottomPadding()
                 )
-                .then(
-                    if (topLevel) {
-                        Modifier.topLevelSwipeNavigation(
-                            route = route,
-                            navController = navController,
-                            viewModel = viewModel
-                        )
-                    } else {
-                        Modifier
-                    }
-                )
         ) {
             if (state.isBusy) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             NavHost(
                 navController = navController,
                 startDestination = Route.Home,
-                enterTransition = { topLevelEnterTransition(initialState.destination.route, targetState.destination.route) },
-                exitTransition = { topLevelExitTransition(initialState.destination.route, targetState.destination.route) },
-                popEnterTransition = { topLevelEnterTransition(initialState.destination.route, targetState.destination.route) },
-                popExitTransition = { topLevelExitTransition(initialState.destination.route, targetState.destination.route) }
+                enterTransition = { fadeIn(tween(160)) },
+                exitTransition = { fadeOut(tween(120)) },
+                popEnterTransition = { fadeIn(tween(160)) },
+                popExitTransition = { fadeOut(tween(120)) }
             ) {
                 composable(Route.Home) {
                     HomeScreen(
@@ -639,6 +682,105 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
             } else if (showStartupLoading) {
                 BoardLoadingOverlay(message = "Not alanı hazırlanıyor.")
             }
+        }
+    }
+}
+}
+
+@Composable
+private fun Board2NoteNavigationDrawer(
+    currentRoute: String?,
+    state: Board2NotesUiState,
+    onDestinationClick: (NavigationDestination) -> Unit
+) {
+    ModalDrawerSheet(
+        drawerContainerColor = Color.White,
+        drawerContentColor = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.width(304.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxHeight()
+                .padding(horizontal = 12.dp, vertical = 18.dp)
+        ) {
+            HeaderLogoMark(
+                modifier = Modifier
+                    .padding(start = 12.dp, top = 4.dp, bottom = 20.dp)
+                    .width(132.dp)
+                    .height(48.dp)
+            )
+            mainDrawerDestinations.forEach { destination ->
+                val selected = when (destination.route) {
+                    Route.Notes -> currentRoute == Route.Notes || currentRoute?.startsWith("${Route.Folder}/") == true
+                    Route.Archive -> currentRoute == Route.Archive
+                    else -> currentRoute == destination.route
+                }
+                NavigationDrawerItem(
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(destination.label, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                            if (destination.route == Route.Archive && state.archivedNotes.isNotEmpty()) {
+                                Spacer(Modifier.width(8.dp))
+                                Surface(shape = CircleShape, color = Color(0xFFEFF6FF)) {
+                                    Text(
+                                        "${state.archivedNotes.size}",
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    selected = selected,
+                    onClick = { onDestinationClick(destination) },
+                    icon = { Icon(destination.icon, contentDescription = null) },
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = Color(0xFFEFF6FF),
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        unselectedContainerColor = Color.Transparent,
+                        unselectedIconColor = Color(0xFF64748B),
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
+            }
+            if (state.settings.debugMode) {
+                NavigationDrawerItem(
+                    label = { Text("Debug") },
+                    selected = currentRoute == Route.Debug,
+                    onClick = { onDestinationClick(NavigationDestination(Route.Debug, "Debug", Icons.Default.BugReport, topLevel = false)) },
+                    icon = { Icon(Icons.Default.BugReport, contentDescription = null) },
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = Color(0xFFEFF6FF),
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        unselectedContainerColor = Color.Transparent,
+                        unselectedIconColor = Color(0xFF64748B),
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier.padding(vertical = 2.dp)
+                )
+            }
+            Spacer(Modifier.weight(1f))
+            Divider(color = Color(0xFFE2E8F0))
+            Spacer(Modifier.height(8.dp))
+            NavigationDrawerItem(
+                label = { Text(settingsDrawerDestination.label, fontWeight = FontWeight.SemiBold) },
+                selected = currentRoute == Route.Settings,
+                onClick = { onDestinationClick(settingsDrawerDestination) },
+                icon = { Icon(settingsDrawerDestination.icon, contentDescription = null) },
+                colors = NavigationDrawerItemDefaults.colors(
+                    selectedContainerColor = Color(0xFFEFF6FF),
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    unselectedContainerColor = Color.Transparent,
+                    unselectedIconColor = Color(0xFF64748B),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurface
+                )
+            )
         }
     }
 }
@@ -967,55 +1109,6 @@ private fun navigateTopLevel(route: String, navController: NavHostController, vi
         launchSingleTop = true
         restoreState = false
     }
-}
-
-private fun Modifier.topLevelSwipeNavigation(
-    route: String?,
-    navController: NavHostController,
-    viewModel: Board2NotesViewModel
-): Modifier = pointerInput(route) {
-    var totalDrag = 0f
-    detectHorizontalDragGestures(
-        onDragStart = { totalDrag = 0f },
-        onHorizontalDrag = { _, dragAmount -> totalDrag += dragAmount },
-        onDragEnd = {
-            if (abs(totalDrag) < 92f) return@detectHorizontalDragGestures
-            val targetRoute = if (totalDrag < 0f) nextTopLevelRoute(route) else previousTopLevelRoute(route)
-            navigateTopLevel(targetRoute, navController, viewModel)
-        }
-    )
-}
-
-private fun nextTopLevelRoute(route: String?): String = when (route) {
-    Route.Home -> Route.Notes
-    Route.Notes -> Route.Settings
-    Route.Settings -> Route.Home
-    else -> Route.Home
-}
-
-private fun previousTopLevelRoute(route: String?): String = when (route) {
-    Route.Home -> Route.Settings
-    Route.Notes -> Route.Home
-    Route.Settings -> Route.Notes
-    else -> Route.Home
-}
-
-private fun AnimatedContentTransitionScope<*>.topLevelEnterTransition(fromRoute: String?, toRoute: String?): EnterTransition {
-    val direction = if (nextTopLevelRoute(fromRoute) == toRoute) {
-        AnimatedContentTransitionScope.SlideDirection.Left
-    } else {
-        AnimatedContentTransitionScope.SlideDirection.Right
-    }
-    return slideIntoContainer(direction, animationSpec = tween(260)) + fadeIn(tween(180))
-}
-
-private fun AnimatedContentTransitionScope<*>.topLevelExitTransition(fromRoute: String?, toRoute: String?): ExitTransition {
-    val direction = if (nextTopLevelRoute(fromRoute) == toRoute) {
-        AnimatedContentTransitionScope.SlideDirection.Left
-    } else {
-        AnimatedContentTransitionScope.SlideDirection.Right
-    }
-    return slideOutOfContainer(direction, animationSpec = tween(260)) + fadeOut(tween(180))
 }
 
 @Composable
@@ -2581,17 +2674,29 @@ private data class DrawingPath(
     val points: List<Offset>
 )
 
+private enum class CanvasTool {
+    Pen,
+    Eraser,
+    Select
+}
+
 private fun serializeDrawing(paths: List<DrawingPath>): String {
     if (paths.isEmpty()) return ""
+    return "\n\n[DrawingData:${serializeDrawingPayload(paths)}]"
+}
+
+private fun serializeDrawingPayload(paths: List<DrawingPath>): String {
+    if (paths.isEmpty()) return ""
     return buildString {
-        append("\n\n[DrawingData:")
         paths.forEachIndexed { pIndex, path ->
             if (pIndex > 0) append("|")
             val colorStr = when (path.color) {
                 Color.Black -> "black"
                 Color(0xFF3B82F6) -> "blue"
+                Color(0xFF2563EB) -> "blue"
                 Color(0xFFEF4444) -> "red"
                 Color(0xFF10B981) -> "green"
+                Color(0xFFF59E0B) -> "amber"
                 else -> "black"
             }
             append("${colorStr}_${path.strokeWidth}_")
@@ -2600,7 +2705,6 @@ private fun serializeDrawing(paths: List<DrawingPath>): String {
                 append(String.format(Locale.US, "%.1f,%.1f", pt.x, pt.y))
             }
         }
-        append("]")
     }
 }
 
@@ -2609,8 +2713,11 @@ private fun deserializeDrawing(body: String): Pair<String, List<DrawingPath>> {
     val match = regex.find(body) ?: return Pair(body, emptyList())
     val cleanBody = body.substring(0, match.range.first)
     val data = match.groupValues[1]
-    if (data.isBlank()) return Pair(cleanBody, emptyList())
-    
+    return Pair(cleanBody, parseDrawingPayload(data))
+}
+
+private fun parseDrawingPayload(data: String): List<DrawingPath> {
+    if (data.isBlank()) return emptyList()
     val paths = mutableListOf<DrawingPath>()
     try {
         data.split("|").forEach { pathStr ->
@@ -2625,6 +2732,7 @@ private fun deserializeDrawing(body: String): Pair<String, List<DrawingPath>> {
                     "blue" -> Color(0xFF3B82F6)
                     "red" -> Color(0xFFEF4444)
                     "green" -> Color(0xFF10B981)
+                    "amber" -> Color(0xFFF59E0B)
                     else -> Color.Black
                 }
                 
@@ -2644,7 +2752,80 @@ private fun deserializeDrawing(body: String): Pair<String, List<DrawingPath>> {
     } catch (e: Exception) {
         // Safe fallback
     }
-    return Pair(cleanBody, paths)
+    return paths
+}
+
+private fun serializeCanvasPages(pages: List<List<DrawingPath>>): String {
+    val safePages = pages.ifEmpty { listOf(emptyList()) }
+    return "\n\n[CanvasPages:${safePages.joinToString("~PAGE~") { serializeDrawingPayload(it) }}]"
+}
+
+private fun deserializeCanvasPages(body: String): Pair<String, List<List<DrawingPath>>> {
+    val regex = """\n\n\[CanvasPages:(.*)\]""".toRegex()
+    val match = regex.find(body)
+    if (match != null) {
+        val cleanBody = body.substring(0, match.range.first)
+        val pages = match.groupValues[1]
+            .split("~PAGE~")
+            .map { parseDrawingPayload(it) }
+            .ifEmpty { listOf(emptyList()) }
+        return Pair(cleanBody, pages)
+    }
+    val legacy = deserializeDrawing(body)
+    return Pair(legacy.first, listOf(legacy.second))
+}
+
+private fun screenToCanvas(point: Offset, viewportOffset: Offset, scale: Float): Offset =
+    Offset(
+        x = (point.x - viewportOffset.x) / scale,
+        y = (point.y - viewportOffset.y) / scale
+    )
+
+private fun canvasToScreen(point: Offset, viewportOffset: Offset, scale: Float): Offset =
+    Offset(
+        x = point.x * scale + viewportOffset.x,
+        y = point.y * scale + viewportOffset.y
+    )
+
+private fun pathBounds(path: DrawingPath): Rect {
+    if (path.points.isEmpty()) return Rect.Zero
+    val left = path.points.minOf { it.x }
+    val top = path.points.minOf { it.y }
+    val right = path.points.maxOf { it.x }
+    val bottom = path.points.maxOf { it.y }
+    val inset = path.strokeWidth / 2f
+    return Rect(left - inset, top - inset, right + inset, bottom + inset)
+}
+
+private fun normalizedRect(a: Offset, b: Offset): Rect =
+    Rect(
+        left = minOf(a.x, b.x),
+        top = minOf(a.y, b.y),
+        right = maxOf(a.x, b.x),
+        bottom = maxOf(a.y, b.y)
+    )
+
+private fun pathTouches(points: List<Offset>, path: DrawingPath, radius: Float): Boolean {
+    if (points.isEmpty() || path.points.isEmpty()) return false
+    val threshold = radius * radius
+    return path.points.any { pathPoint ->
+        points.any { eraserPoint ->
+            val dx = eraserPoint.x - pathPoint.x
+            val dy = eraserPoint.y - pathPoint.y
+            (dx * dx + dy * dy) <= threshold
+        }
+    }
+}
+
+private fun translatePath(path: DrawingPath, delta: Offset): DrawingPath =
+    path.copy(points = path.points.map { Offset(it.x + delta.x, it.y + delta.y) })
+
+private fun pathIntersectsRect(path: DrawingPath, rect: Rect): Boolean {
+    val bounds = pathBounds(path)
+    return bounds.left <= rect.right &&
+        bounds.right >= rect.left &&
+        bounds.top <= rect.bottom &&
+        bounds.bottom >= rect.top
 }
 
 @Composable
@@ -3226,13 +3407,28 @@ private fun SamsungStyleNoteEditorScreen(
     val context = LocalContext.current
     var title by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.title) }
     var course by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.courseName) }
-    val initialData = remember(note.createdAtEpochMs, state.activeSavedNoteId) { deserializeDrawing(note.body) }
+    val initialData = remember(note.createdAtEpochMs, state.activeSavedNoteId) { deserializeCanvasPages(note.body) }
     var cleanText by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(initialData.first) }
-    var canvasPaths by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(initialData.second) }
+    var canvasPages by remember(note.createdAtEpochMs, state.activeSavedNoteId) {
+        mutableStateOf(initialData.second.ifEmpty { listOf(emptyList()) })
+    }
+    var currentPageIndex by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableIntStateOf(0) }
     var body by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.body) }
+    var activeTool by remember { mutableStateOf(CanvasTool.Pen) }
     var currentColor by remember { mutableStateOf(Color.Black) }
-    var currentStrokeWidth by remember { mutableStateOf(5f) }
+    var currentStrokeWidth by remember(state.settings.defaultPenWidth) { mutableStateOf(state.settings.defaultPenWidth) }
+    var eraserSize by remember(state.settings.defaultEraserSize) { mutableStateOf(state.settings.defaultEraserSize) }
     var currentPathPoints by remember { mutableStateOf(listOf<Offset>()) }
+    var eraserPoints by remember { mutableStateOf(listOf<Offset>()) }
+    var viewportScale by remember { mutableStateOf(1f) }
+    var viewportOffset by remember { mutableStateOf(Offset.Zero) }
+    var selectionStart by remember { mutableStateOf<Offset?>(null) }
+    var selectionRect by remember { mutableStateOf<Rect?>(null) }
+    var selectedPathIndexes by remember { mutableStateOf<Set<Int>>(emptySet()) }
+    var lastMovePoint by remember { mutableStateOf<Offset?>(null) }
+    var showStrokeMenu by remember { mutableStateOf(false) }
+    var showEraserMenu by remember { mutableStateOf(false) }
+    var showClearPageDialog by remember { mutableStateOf(false) }
     var showAddMenu by remember { mutableStateOf(false) }
     var showMoreMenu by remember { mutableStateOf(false) }
     var courseDropdownExpanded by remember { mutableStateOf(false) }
@@ -3242,11 +3438,32 @@ private fun SamsungStyleNoteEditorScreen(
     val canvasBitmap = remember(savedNote?.canvasImagePath) {
         savedNote?.canvasImagePath?.let { BitmapFactory.decodeFile(it) }
     }
+    val canvasImage = remember(canvasBitmap) { canvasBitmap?.asImageBitmap() }
     val existingCourses = remember(state.savedNotes) {
         state.savedNotes.map { it.courseName }.filter { it.isNotBlank() }.distinct().sorted()
     }
     val wordCount = remember(cleanText) {
         cleanText.split("\\s+".toRegex()).count { it.isNotBlank() }
+    }
+    val primaryCanvasColor = MaterialTheme.colorScheme.primary
+    val safePageIndex = currentPageIndex.coerceIn(0, (canvasPages.size - 1).coerceAtLeast(0))
+    val canvasPaths = canvasPages.getOrElse(safePageIndex) { emptyList() }
+
+    fun setCanvasDocument(pages: List<List<DrawingPath>>, pageIndex: Int = safePageIndex) {
+        val safePages = pages.ifEmpty { listOf(emptyList()) }
+        canvasPages = safePages
+        currentPageIndex = pageIndex.coerceIn(0, safePages.lastIndex)
+        val nextBody = cleanText + serializeCanvasPages(safePages)
+        body = nextBody
+        viewModel.updateNote(title, nextBody, course)
+    }
+
+    fun updateCurrentPage(paths: List<DrawingPath>) {
+        val updatedPages = canvasPages.toMutableList().also { pages ->
+            while (pages.size <= safePageIndex) pages.add(emptyList())
+            pages[safePageIndex] = paths
+        }
+        setCanvasDocument(updatedPages, safePageIndex)
     }
 
     LaunchedEffect(title, course, body) {
@@ -3266,8 +3483,8 @@ private fun SamsungStyleNoteEditorScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(64.dp)
-                    .padding(horizontal = 6.dp),
+                    .height(56.dp)
+                    .padding(horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onNotes) {
@@ -3276,17 +3493,20 @@ private fun SamsungStyleNoteEditorScreen(
                 androidx.compose.foundation.text.BasicTextField(
                     value = title,
                     onValueChange = { title = it.ifBlank { "" } },
-                    textStyle = MaterialTheme.typography.titleLarge.copy(
+                    textStyle = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = 20.sp,
                         color = MaterialTheme.colorScheme.onSurface,
                         fontWeight = FontWeight.SemiBold
                     ),
                     singleLine = true,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 4.dp),
                     decorationBox = { inner ->
                         if (title.isBlank()) {
                             Text(
                                 "Başlık",
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp),
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
                             )
@@ -3335,6 +3555,22 @@ private fun SamsungStyleNoteEditorScreen(
                     }
                     DropdownMenu(expanded = showMoreMenu, onDismissRequest = { showMoreMenu = false }) {
                         DropdownMenuItem(
+                            text = { Text("Ders seç") },
+                            leadingIcon = { Icon(Icons.Default.Folder, contentDescription = null) },
+                            onClick = {
+                                showMoreMenu = false
+                                courseDropdownExpanded = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Yeni ders oluştur") },
+                            leadingIcon = { Icon(Icons.Default.Add, contentDescription = null) },
+                            onClick = {
+                                showMoreMenu = false
+                                showNewCourseDialog = true
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Kaydet ve notlara dön") },
                             leadingIcon = { Icon(Icons.Default.Save, contentDescription = null) },
                             onClick = {
@@ -3367,44 +3603,27 @@ private fun SamsungStyleNoteEditorScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 6.dp),
+                .padding(horizontal = 18.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = Color(0xFFF1F5F9),
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                modifier = Modifier.clickable { courseDropdownExpanded = true }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        course.ifBlank { "Genel" },
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-            Surface(shape = RoundedCornerShape(999.dp), color = Color(0xFFEFF6FF)) {
-                Text(
-                    if (noteType == NoteType.Canvas) "Canvas" else "Yazı",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            Spacer(Modifier.weight(1f))
+            Text(
+                course.ifBlank { "Genel" },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
             if (noteType == NoteType.Text) {
                 Text(
                     "$wordCount kelime",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text(
+                    "${safePageIndex + 1}/${canvasPages.size}",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
@@ -3421,8 +3640,8 @@ private fun SamsungStyleNoteEditorScreen(
                     value = cleanText,
                     onValueChange = {
                         cleanText = it
-                        body = cleanText + serializeDrawing(canvasPaths)
-                        viewModel.updateNote(title, body, course)
+                        body = cleanText
+                        viewModel.updateNote(title, cleanText, course)
                     },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         fontSize = 17.sp,
@@ -3449,61 +3668,207 @@ private fun SamsungStyleNoteEditorScreen(
                     .fillMaxWidth()
                     .background(Color.White)
             ) {
-                if (canvasBitmap != null) {
-                    Image(
-                        bitmap = canvasBitmap.asImageBitmap(),
-                        contentDescription = "Canvas sayfası",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 18.dp, vertical = 12.dp),
-                        contentScale = ContentScale.Fit
-                    )
-                }
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 18.dp, vertical = 12.dp)
-                        .pointerInput(currentColor, currentStrokeWidth) {
+                        .pointerInput(viewportScale, viewportOffset) {
+                            awaitEachGesture {
+                                var previousCentroid: Offset? = null
+                                var previousDistance = 0f
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val pressed = event.changes.filter { it.pressed }
+                                    if (pressed.size >= 2) {
+                                        val first = pressed[0].position
+                                        val second = pressed[1].position
+                                        val centroid = Offset(
+                                            x = (first.x + second.x) / 2f,
+                                            y = (first.y + second.y) / 2f
+                                        )
+                                        val dx = first.x - second.x
+                                        val dy = first.y - second.y
+                                        val distance = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
+                                        val oldCentroid = previousCentroid
+                                        if (oldCentroid != null && previousDistance > 0f) {
+                                            val zoom = (distance / previousDistance).coerceIn(0.82f, 1.22f)
+                                            val oldScale = viewportScale
+                                            val nextScale = (viewportScale * zoom)
+                                                .coerceIn(state.settings.canvasMinZoom, state.settings.canvasMaxZoom)
+                                            val focusBefore = screenToCanvas(centroid, viewportOffset, oldScale)
+                                            val pan = Offset(
+                                                x = centroid.x - oldCentroid.x,
+                                                y = centroid.y - oldCentroid.y
+                                            )
+                                            viewportScale = nextScale
+                                            viewportOffset = Offset(
+                                                x = centroid.x - focusBefore.x * nextScale + pan.x,
+                                                y = centroid.y - focusBefore.y * nextScale + pan.y
+                                            )
+                                            event.changes.forEach { it.consume() }
+                                        }
+                                        previousCentroid = centroid
+                                        previousDistance = distance
+                                    }
+                                } while (pressed.isNotEmpty())
+                            }
+                        }
+                        .pointerInput(activeTool, currentColor, currentStrokeWidth, eraserSize, viewportScale, viewportOffset, canvasPaths, selectedPathIndexes) {
                             detectDragGestures(
-                                onDragStart = { offset -> currentPathPoints = currentPathPoints + offset },
+                                onDragStart = { offset ->
+                                    val canvasPoint = screenToCanvas(offset, viewportOffset, viewportScale)
+                                    when (activeTool) {
+                                        CanvasTool.Pen -> currentPathPoints = listOf(canvasPoint)
+                                        CanvasTool.Eraser -> eraserPoints = listOf(canvasPoint)
+                                        CanvasTool.Select -> {
+                                            val selectedBounds = selectedPathIndexes
+                                                .mapNotNull { index -> canvasPaths.getOrNull(index)?.let(::pathBounds) }
+                                                .reduceOrNull { acc, rect ->
+                                                    Rect(
+                                                        left = minOf(acc.left, rect.left),
+                                                        top = minOf(acc.top, rect.top),
+                                                        right = maxOf(acc.right, rect.right),
+                                                        bottom = maxOf(acc.bottom, rect.bottom)
+                                                    )
+                                                }
+                                            if (selectedBounds?.contains(canvasPoint) == true) {
+                                                lastMovePoint = canvasPoint
+                                            } else {
+                                                selectionStart = canvasPoint
+                                                selectionRect = normalizedRect(canvasPoint, canvasPoint)
+                                                selectedPathIndexes = emptySet()
+                                            }
+                                        }
+                                    }
+                                },
                                 onDrag = { change, _ ->
                                     change.consume()
-                                    currentPathPoints = currentPathPoints + change.position
+                                    val canvasPoint = screenToCanvas(change.position, viewportOffset, viewportScale)
+                                    when (activeTool) {
+                                        CanvasTool.Pen -> currentPathPoints = currentPathPoints + canvasPoint
+                                        CanvasTool.Eraser -> eraserPoints = eraserPoints + canvasPoint
+                                        CanvasTool.Select -> {
+                                            val moveStart = lastMovePoint
+                                            if (moveStart != null && selectedPathIndexes.isNotEmpty()) {
+                                                val delta = Offset(canvasPoint.x - moveStart.x, canvasPoint.y - moveStart.y)
+                                                updateCurrentPage(
+                                                    canvasPaths.mapIndexed { index, path ->
+                                                        if (index in selectedPathIndexes) translatePath(path, delta) else path
+                                                    }
+                                                )
+                                                selectionRect = selectedPathIndexes
+                                                    .mapNotNull { index -> canvasPages.getOrNull(safePageIndex)?.getOrNull(index)?.let(::pathBounds) }
+                                                    .reduceOrNull { acc, rect ->
+                                                        Rect(
+                                                            left = minOf(acc.left, rect.left),
+                                                            top = minOf(acc.top, rect.top),
+                                                            right = maxOf(acc.right, rect.right),
+                                                            bottom = maxOf(acc.bottom, rect.bottom)
+                                                        )
+                                                    }
+                                                lastMovePoint = canvasPoint
+                                            } else {
+                                                selectionStart?.let { start -> selectionRect = normalizedRect(start, canvasPoint) }
+                                            }
+                                        }
+                                    }
                                 },
                                 onDragEnd = {
-                                    if (currentPathPoints.isNotEmpty()) {
-                                        canvasPaths = canvasPaths + DrawingPath(currentColor, currentStrokeWidth, currentPathPoints)
-                                        currentPathPoints = emptyList()
-                                        body = cleanText + serializeDrawing(canvasPaths)
-                                        viewModel.updateNote(title, body, course)
+                                    when (activeTool) {
+                                        CanvasTool.Pen -> {
+                                            if (currentPathPoints.isNotEmpty()) {
+                                                updateCurrentPage(canvasPaths + DrawingPath(currentColor, currentStrokeWidth, currentPathPoints))
+                                                currentPathPoints = emptyList()
+                                            }
+                                        }
+                                        CanvasTool.Eraser -> {
+                                            if (eraserPoints.isNotEmpty()) {
+                                                updateCurrentPage(canvasPaths.filterNot { pathTouches(eraserPoints, it, eraserSize) })
+                                                eraserPoints = emptyList()
+                                            }
+                                        }
+                                        CanvasTool.Select -> {
+                                            val rect = selectionRect
+                                            if (selectionStart != null && rect != null && lastMovePoint == null) {
+                                                selectedPathIndexes = canvasPaths
+                                                    .mapIndexedNotNull { index, path -> if (pathIntersectsRect(path, rect)) index else null }
+                                                    .toSet()
+                                            }
+                                            selectionStart = null
+                                            lastMovePoint = null
+                                        }
                                     }
                                 }
                             )
                         }
                 ) {
-                    canvasPaths.forEach { path ->
-                        val composePath = Path().apply {
-                            path.points.forEachIndexed { index, offset ->
-                                if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                    withTransform({
+                        translate(viewportOffset.x, viewportOffset.y)
+                        scale(viewportScale, viewportScale)
+                    }) {
+                        canvasImage?.let { image ->
+                            drawImage(
+                                image = image,
+                                dstSize = IntSize(image.width, image.height)
+                            )
+                        }
+                        canvasPaths.forEachIndexed { pathIndex, path ->
+                            val composePath = Path().apply {
+                                path.points.forEachIndexed { index, offset ->
+                                    if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                                }
+                            }
+                            drawPath(
+                                path = composePath,
+                                color = path.color,
+                                style = Stroke(
+                                    width = path.strokeWidth,
+                                    cap = StrokeCap.Round,
+                                    join = StrokeJoin.Round
+                                )
+                            )
+                            if (pathIndex in selectedPathIndexes) {
+                                val bounds = pathBounds(path)
+                                drawRect(
+                                    color = primaryCanvasColor.copy(alpha = 0.22f),
+                                    topLeft = Offset(bounds.left, bounds.top),
+                                    size = Size(bounds.width, bounds.height),
+                                    style = Stroke(width = 1.5f / viewportScale)
+                                )
                             }
                         }
-                        drawPath(
-                            path = composePath,
-                            color = path.color,
-                            style = Stroke(width = path.strokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                        )
-                    }
-                    if (currentPathPoints.isNotEmpty()) {
-                        val composePath = Path().apply {
-                            currentPathPoints.forEachIndexed { index, offset ->
-                                if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                        if (currentPathPoints.isNotEmpty()) {
+                            val composePath = Path().apply {
+                                currentPathPoints.forEachIndexed { index, offset ->
+                                    if (index == 0) moveTo(offset.x, offset.y) else lineTo(offset.x, offset.y)
+                                }
+                            }
+                            drawPath(
+                                path = composePath,
+                                color = currentColor,
+                                style = Stroke(width = currentStrokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            )
+                        }
+                        if (eraserPoints.isNotEmpty()) {
+                            eraserPoints.forEach { point ->
+                                drawCircle(
+                                    color = Color(0xFFEF4444).copy(alpha = 0.18f),
+                                    radius = eraserSize,
+                                    center = point
+                                )
                             }
                         }
-                        drawPath(
-                            path = composePath,
-                            color = currentColor,
-                            style = Stroke(width = currentStrokeWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
-                        )
+                        selectionRect?.let { rect ->
+                            drawRect(
+                                color = primaryCanvasColor,
+                                topLeft = Offset(rect.left, rect.top),
+                                size = Size(rect.width, rect.height),
+                                style = Stroke(
+                                    width = 1.8f / viewportScale,
+                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
+                                )
+                            )
+                        }
                     }
                 }
                 DraggableCanvasToolbar(
@@ -3516,7 +3881,9 @@ private fun SamsungStyleNoteEditorScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        CanvasToolIconButton(Icons.Default.Brush, selected = true) {}
+                        CanvasToolIconButton(Icons.Default.Brush, selected = activeTool == CanvasTool.Pen) {
+                            activeTool = CanvasTool.Pen
+                        }
                         listOf(
                             Color.Black,
                             Color(0xFF2563EB),
@@ -3536,33 +3903,130 @@ private fun SamsungStyleNoteEditorScreen(
                                     .clickable { currentColor = color }
                             )
                         }
-                        CanvasToolIconButton(Icons.Default.Palette, selected = currentStrokeWidth > 10f) {
-                            currentStrokeWidth = if (currentStrokeWidth == 5f) 12f else if (currentStrokeWidth == 12f) 22f else 5f
+                        Box {
+                            CanvasToolIconButton(Icons.Default.Palette, selected = showStrokeMenu) {
+                                showStrokeMenu = true
+                            }
+                            DropdownMenu(expanded = showStrokeMenu, onDismissRequest = { showStrokeMenu = false }) {
+                                Text(
+                                    "Kalem kalınlığı",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Slider(
+                                    value = currentStrokeWidth,
+                                    onValueChange = { currentStrokeWidth = it },
+                                    valueRange = 2f..28f,
+                                    modifier = Modifier.width(180.dp).padding(horizontal = 12.dp)
+                                )
+                            }
+                        }
+                        Box {
+                            CanvasToolIconButton(Icons.Default.Delete, selected = activeTool == CanvasTool.Eraser) {
+                                activeTool = CanvasTool.Eraser
+                                showEraserMenu = true
+                            }
+                            DropdownMenu(expanded = showEraserMenu, onDismissRequest = { showEraserMenu = false }) {
+                                Text(
+                                    "Silgi boyutu",
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Slider(
+                                    value = eraserSize,
+                                    onValueChange = { eraserSize = it },
+                                    valueRange = 12f..70f,
+                                    modifier = Modifier.width(180.dp).padding(horizontal = 12.dp)
+                                )
+                            }
+                        }
+                        CanvasToolIconButton(Icons.Default.Check, selected = activeTool == CanvasTool.Select) {
+                            activeTool = CanvasTool.Select
                         }
                         CanvasToolIconButton(Icons.Default.Undo, selected = false) {
                             if (canvasPaths.isNotEmpty()) {
-                                canvasPaths = canvasPaths.dropLast(1)
-                                body = cleanText + serializeDrawing(canvasPaths)
-                                viewModel.updateNote(title, body, course)
+                                updateCurrentPage(canvasPaths.dropLast(1))
                             }
                         }
-                        CanvasToolIconButton(Icons.Default.Delete, selected = false) {
-                            canvasPaths = emptyList()
-                            body = cleanText + serializeDrawing(canvasPaths)
-                            viewModel.updateNote(title, body, course)
+                        CanvasToolIconButton(Icons.Default.Add, selected = false) {
+                            val updatedPages = canvasPages + listOf(emptyList())
+                            setCanvasDocument(updatedPages, updatedPages.lastIndex)
+                            viewportScale = 1f
+                            viewportOffset = Offset.Zero
+                            selectedPathIndexes = emptySet()
+                            selectionRect = null
+                        }
+                        CanvasToolIconButton(Icons.Default.Close, selected = false) {
+                            showClearPageDialog = true
                         }
                     }
                 }
-                Text(
-                    "1/1",
+                Surface(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(20.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.White.copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    shadowElevation = 4.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        TextButton(
+                            onClick = {
+                                currentPageIndex = (safePageIndex - 1).coerceAtLeast(0)
+                                selectedPathIndexes = emptySet()
+                                selectionRect = null
+                            },
+                            enabled = safePageIndex > 0
+                        ) { Text("<") }
+                        Text(
+                            "Sayfa ${safePageIndex + 1} / ${canvasPages.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        TextButton(
+                            onClick = {
+                                currentPageIndex = (safePageIndex + 1).coerceAtMost(canvasPages.lastIndex)
+                                selectedPathIndexes = emptySet()
+                                selectionRect = null
+                            },
+                            enabled = safePageIndex < canvasPages.lastIndex
+                        ) { Text(">") }
+                    }
+                }
             }
         }
+    }
+
+    if (showClearPageDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearPageDialog = false },
+            title = { Text("Sayfayı temizle") },
+            text = { Text("Bu sayfadaki çizimler silinecek. Diğer sayfalar etkilenmez.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        updateCurrentPage(emptyList())
+                        selectedPathIndexes = emptySet()
+                        selectionRect = null
+                        showClearPageDialog = false
+                    }
+                ) {
+                    Text("Temizle")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearPageDialog = false }) {
+                    Text("Vazgeç")
+                }
+            }
+        )
     }
 
     if (courseDropdownExpanded) {
@@ -4413,6 +4877,51 @@ private fun SamsungSettingsScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Slider(state.settings.threshold, viewModel::setThreshold, valueRange = 0.45f..0.60f)
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        SamsungSettingsSection("Canvas ve kalem") {
+            SettingSwitchRow(
+                Icons.Default.Brush,
+                "Parmakla çizim",
+                "Stylus yokken canvas çizimini açık tutar",
+                state.settings.allowFingerDrawing,
+                viewModel::setAllowFingerDrawing
+            )
+            SettingSwitchRow(
+                Icons.Default.Edit,
+                "Stylus basıncı",
+                "Destekli kalemlerde değişken kalınlık için hazır",
+                state.settings.useStylusPressure,
+                viewModel::setUseStylusPressure
+            )
+            SettingSwitchRow(
+                Icons.Default.Check,
+                "Avuç içi reddi",
+                "S Pen cihazlarda yanlış temasları azaltmak için hazırlık",
+                state.settings.palmRejection,
+                viewModel::setPalmRejection
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Kalem kalınlığı: ${"%.0f".format(state.settings.defaultPenWidth)}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(state.settings.defaultPenWidth, viewModel::setDefaultPenWidth, valueRange = 2f..28f)
+            Text(
+                "Silgi boyutu: ${"%.0f".format(state.settings.defaultEraserSize)}",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(state.settings.defaultEraserSize, viewModel::setDefaultEraserSize, valueRange = 12f..70f)
+            Text(
+                "Maksimum yakınlaştırma: ${"%.1f".format(state.settings.canvasMaxZoom)}x",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Slider(state.settings.canvasMaxZoom, viewModel::setCanvasMaxZoom, valueRange = 2f..8f)
         }
 
         Spacer(Modifier.height(12.dp))

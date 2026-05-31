@@ -584,6 +584,32 @@ class Board2NotesViewModel(
         viewModelScope.launch { container.settingsRepository.setShowBottomNavigation(enabled) }
     }
 
+    fun setAllowFingerDrawing(enabled: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setAllowFingerDrawing(enabled) }
+    }
+
+    fun setUseStylusPressure(enabled: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setUseStylusPressure(enabled) }
+    }
+
+    fun setPalmRejection(enabled: Boolean) {
+        viewModelScope.launch { container.settingsRepository.setPalmRejection(enabled) }
+    }
+
+    fun setDefaultPenWidth(value: Float) {
+        viewModelScope.launch { container.settingsRepository.setDefaultPenWidth(value) }
+    }
+
+    fun setDefaultEraserSize(value: Float) {
+        viewModelScope.launch { container.settingsRepository.setDefaultEraserSize(value) }
+    }
+
+    fun setCanvasMaxZoom(value: Float) {
+        viewModelScope.launch {
+            container.settingsRepository.setCanvasZoomRange(_uiState.value.settings.canvasMinZoom, value)
+        }
+    }
+
     fun showMessage(message: String) {
         _uiState.value = _uiState.value.copy(userMessage = message)
     }

@@ -25,6 +25,13 @@ class SettingsRepository(private val context: Context) {
         val backendAdbReverseMigration = booleanPreferencesKey("backend_adb_reverse_migration_20260530")
         val useBackendPipeline = booleanPreferencesKey("use_backend_pipeline")
         val showBottomNavigation = booleanPreferencesKey("show_bottom_navigation")
+        val allowFingerDrawing = booleanPreferencesKey("allow_finger_drawing")
+        val useStylusPressure = booleanPreferencesKey("use_stylus_pressure")
+        val palmRejection = booleanPreferencesKey("palm_rejection")
+        val defaultPenWidth = floatPreferencesKey("default_pen_width")
+        val defaultEraserSize = floatPreferencesKey("default_eraser_size")
+        val canvasMinZoom = floatPreferencesKey("canvas_min_zoom")
+        val canvasMaxZoom = floatPreferencesKey("canvas_max_zoom")
     }
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
@@ -40,7 +47,14 @@ class SettingsRepository(private val context: Context) {
             llmEnabled = prefs[Keys.llmEnabled] ?: false,
             backendBaseUrl = storedBackendBaseUrl.ifBlank { DEFAULT_BACKEND_BASE_URL },
             useBackendPipeline = prefs[Keys.useBackendPipeline] ?: true,
-            showBottomNavigation = prefs[Keys.showBottomNavigation] ?: false
+            showBottomNavigation = prefs[Keys.showBottomNavigation] ?: false,
+            allowFingerDrawing = prefs[Keys.allowFingerDrawing] ?: true,
+            useStylusPressure = prefs[Keys.useStylusPressure] ?: true,
+            palmRejection = prefs[Keys.palmRejection] ?: false,
+            defaultPenWidth = prefs[Keys.defaultPenWidth] ?: 5f,
+            defaultEraserSize = prefs[Keys.defaultEraserSize] ?: 32f,
+            canvasMinZoom = prefs[Keys.canvasMinZoom] ?: 0.5f,
+            canvasMaxZoom = prefs[Keys.canvasMaxZoom] ?: 5f
         )
     }
 
@@ -97,5 +111,34 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setShowBottomNavigation(value: Boolean) {
         context.settingsDataStore.edit { it[Keys.showBottomNavigation] = value }
+    }
+
+    suspend fun setAllowFingerDrawing(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.allowFingerDrawing] = value }
+    }
+
+    suspend fun setUseStylusPressure(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.useStylusPressure] = value }
+    }
+
+    suspend fun setPalmRejection(value: Boolean) {
+        context.settingsDataStore.edit { it[Keys.palmRejection] = value }
+    }
+
+    suspend fun setDefaultPenWidth(value: Float) {
+        context.settingsDataStore.edit { it[Keys.defaultPenWidth] = value.coerceIn(2f, 28f) }
+    }
+
+    suspend fun setDefaultEraserSize(value: Float) {
+        context.settingsDataStore.edit { it[Keys.defaultEraserSize] = value.coerceIn(12f, 70f) }
+    }
+
+    suspend fun setCanvasZoomRange(minZoom: Float, maxZoom: Float) {
+        val safeMin = minZoom.coerceIn(0.35f, 1f)
+        val safeMax = maxZoom.coerceIn(2f, 8f).coerceAtLeast(safeMin + 1f)
+        context.settingsDataStore.edit {
+            it[Keys.canvasMinZoom] = safeMin
+            it[Keys.canvasMaxZoom] = safeMax
+        }
     }
 }

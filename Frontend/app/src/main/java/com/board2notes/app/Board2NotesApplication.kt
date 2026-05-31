@@ -3,10 +3,8 @@ package com.board2notes.app
 import android.app.Application
 import com.board2notes.app.data.backend.BackendBoard2NotesClient
 import com.board2notes.app.data.image.DebugArtifactWriter
-import com.board2notes.app.data.ml.OnnxBoardEnhancementEngine
-import com.board2notes.app.data.ml.OnnxBoardSegmentationEngine
-import com.board2notes.app.data.ml.SafeBoardEnhancementEngine
-import com.board2notes.app.data.ml.SafeBoardSegmentationEngine
+import com.board2notes.app.data.ml.FallbackBoardSegmentationEngine
+import com.board2notes.app.data.ml.HeuristicEnhancementEngine
 import com.board2notes.app.data.models.ModelAssetManager
 import com.board2notes.app.data.models.ModelManifestReader
 import com.board2notes.app.data.notes.FileNoteRepository
@@ -37,12 +35,8 @@ class AppContainer(application: Application) {
     val debugArtifactWriter: DebugArtifactWriter = DebugArtifactWriter(application)
     val backendClient: BackendBoard2NotesClient = BackendBoard2NotesClient()
     val noteRepository: NoteRepository = FileNoteRepository(application.filesDir)
-    val segmentationEngine: BoardSegmentationEngine = SafeBoardSegmentationEngine(
-        OnnxBoardSegmentationEngine(modelAssetManager)
-    )
-    val enhancementEngine: BoardEnhancementEngine = SafeBoardEnhancementEngine(
-        OnnxBoardEnhancementEngine(modelAssetManager)
-    )
+    val segmentationEngine: BoardSegmentationEngine = FallbackBoardSegmentationEngine()
+    val enhancementEngine: BoardEnhancementEngine = HeuristicEnhancementEngine()
     val ocrEngine: OcrEngine = SafeOcrEngine(MlKitLatinOcrEngine())
     val noteFormatter: NoteFormatter = RuleBasedNoteFormatter()
 }

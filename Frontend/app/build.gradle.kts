@@ -80,7 +80,6 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.play.services)
     implementation(libs.mlkit.text.recognition)
-    implementation(libs.onnxruntime.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.json)

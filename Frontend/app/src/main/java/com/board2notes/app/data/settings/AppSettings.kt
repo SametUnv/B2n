@@ -23,5 +23,12 @@ data class AppSettings(
     val llmEnabled: Boolean = false,
     val backendBaseUrl: String = DEFAULT_BACKEND_BASE_URL,
     val useBackendPipeline: Boolean = true,
-    val showBottomNavigation: Boolean = false
+    val showBottomNavigation: Boolean = false,
+    val allowFingerDrawing: Boolean = true,
+    val useStylusPressure: Boolean = true,
+    val palmRejection: Boolean = false,
+    val defaultPenWidth: Float = 5f,
+    val defaultEraserSize: Float = 32f,
+    val canvasMinZoom: Float = 0.5f,
+    val canvasMaxZoom: Float = 5f
 )

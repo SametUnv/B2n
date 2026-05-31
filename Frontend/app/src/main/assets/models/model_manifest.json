@@ -1,96 +1,24 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "runtime_mode": "backend_api",
   "models": [
     {
-      "id": "model1_board_segmentation",
-      "name": "Board2Notes Model 1 Board Segmentation",
-      "format": "onnx",
-      "runtime_supported": true,
-      "path": "models/model1_board_segmentation/board2notes_model1_640_full.onnx",
-      "input_name": "input",
-      "output_names": ["mask_logits"],
-      "input_shape": [1, 3, 640, 640],
-      "output_shape": [1, 1, 640, 640],
-      "preprocessing": {
-        "color": "RGB",
-        "normalization": "0..1",
-        "resize": "letterbox",
-        "size": 640,
-        "pad_value_rgb": 114,
-        "layout": "NCHW",
-        "debug_alternative": "imagenet_mean_std"
-      },
-      "postprocessing": {
-        "activation": "sigmoid",
-        "threshold_default": 0.5,
-        "threshold_range": [0.45, 0.6],
-        "steps": ["morphology_open_close", "largest_connected_component", "unletterbox", "bbox", "crop", "overlay"]
-      },
-      "metrics_file": null,
-      "version": "stage3_polish_final_best",
-      "description": "MobileNetV3-Large + LR-ASPP board/projector area segmentation model exported from PyTorch to ONNX opset 18."
-    },
-    {
-      "id": "model1_board_segmentation_pytorch_checkpoint",
-      "name": "Board2Notes Model 1 PyTorch Checkpoint",
-      "format": "pytorch_checkpoint",
+      "id": "backend_model1_board_segmentation",
+      "name": "Backend Model 1 Board Segmentation",
+      "format": "remote_pytorch_checkpoint",
       "runtime_supported": false,
-      "path": "models/model1_board_segmentation/stage3_polish_final_best.pt",
-      "input_shape": [1, 3, 640, 640],
+      "path": null,
       "output_names": ["mask_logits"],
-      "metrics_file": null,
-      "version": "stage3_polish_final_best",
-      "description": "Training/runtime reference checkpoint packaged into the APK by request. Android runtime uses the ONNX export for Model 1 inference."
+      "description": "Runs on the FastAPI backend. The Kotlin APK no longer embeds the ONNX or PyTorch checkpoint."
     },
     {
-      "id": "model2_enhancement_onnx",
-      "name": "Board2Notes Model 2 NAFNet Multi-Head Enhancement ONNX",
-      "format": "onnx",
-      "runtime_supported": true,
-      "path": "models/model2_enhancement/board2notes_model2_enhancement_512_full.onnx",
-      "input_name": "input",
-      "input_shape": [1, 3, 512, 512],
+      "id": "backend_model2_enhancement",
+      "name": "Backend Model 2 Board Enhancement",
+      "format": "remote_pytorch_checkpoint",
+      "runtime_supported": false,
+      "path": null,
       "output_names": ["restored", "ocr_enhanced", "text_mask_logits"],
-      "preprocessing": {
-        "color": "RGB",
-        "normalization": "0..1",
-        "layout": "NCHW",
-        "tile": 512,
-        "overlap": 64,
-        "small_tile_padding": "edge"
-      },
-      "postprocessing": {
-        "restored": "clamp_0_1",
-        "ocr_enhanced": "clamp_0_1",
-        "text_mask": "sigmoid",
-        "visual_note": "text_on_white_from_mask_threshold_0_45"
-      },
-      "metrics_file": null,
-      "version": "nafnet_base64_multihead_v2_optimized_onnx",
-      "description": "Runtime ONNX export for Model 2. Android engine uses tiled 512 inference with 64px overlap, matching the training notebook inference flow."
-    },
-    {
-      "id": "model2_enhancement_pytorch_checkpoint",
-      "name": "Board2Notes Model 2 NAFNet Multi-Head Enhancement PyTorch Checkpoint",
-      "format": "pytorch_state_dict",
-      "runtime_supported": false,
-      "path": "models/model2_enhancement/final_model.pt",
-      "input_shape": [1, 3, 512, 512],
-      "output_names": ["restored", "ocr", "mask_logits"],
-      "preprocessing": {
-        "color": "RGB",
-        "normalization": "0..1",
-        "tile": 512,
-        "overlap": 64
-      },
-      "postprocessing": {
-        "restored": "clamp_0_1",
-        "ocr": "clamp_0_1",
-        "mask": "sigmoid"
-      },
-      "metrics_file": null,
-      "version": "nafnet_base64_multihead_v2_optimized",
-      "description": "464 MB PyTorch checkpoint. Android runtime requires ONNX or TFLite export before direct use."
+      "description": "Runs on the FastAPI backend. The Kotlin APK no longer embeds the ONNX or PyTorch checkpoint."
     },
     {
       "id": "primary_ocr_mlkit_latin",
@@ -98,7 +26,8 @@
       "format": "mobile_sdk",
       "runtime_supported": true,
       "path": null,
-      "description": "Primary OCR engine for the Kotlin frontend. TrOCR and PaddleOCR are future adapters."
+      "output_names": [],
+      "description": "Local fallback OCR SDK. Board segmentation and enhancement are handled by the backend API."
     }
   ]
 }
