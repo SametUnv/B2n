@@ -1,0 +1,11 @@
+Üretilen Veri Seti Yapısı:
+
+Boş Tahta Veri Seti(Kendi topladığımız veri seti): https://app.roboflow.com/samets-workspace-4soa9/b2n_2/train
+El Yazısı Veri Seti(Satır el yazısı): https://huggingface.co/datasets/Teklia/IAM-line
+
+Dataset: /content/generated_multihead_dataset_v2
+Train: input: 3920 | target_restored: 3920 | target_ocr: 3920 | text_mask: 3920
+Val: input: 144 | target_restored: 144 | target_ocr: 144 | text_mask: 144
+Test: input: 156 | target_restored: 156 | target_ocr: 156 | text_mask: 156
+Veri Seti Boyutu: 8,32 GB
+Bu veri seti 1. modelimiz olan TTM-V2 için topladığımız veri setinin içeridiği noş tahta görüntüleri ile beraber IAM Handwriting Database veriseti kullanılarak boş tahta görsellerinin üstüne el yazısı veri setinden alınan el yazıları yerleştirilerek oluşturulmuştur. Bu veri seti Colab ortamında Drive’da saklanarak elde edilmiş özel bir veri setidir.
