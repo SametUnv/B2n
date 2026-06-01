@@ -28,8 +28,8 @@ class CanvasController(
 
     var tool by mutableStateOf(CanvasTool.Pen)
     var color by mutableStateOf(Color.Black)
-    var strokeWidth by mutableStateOf(6f)
-    var eraserSize by mutableStateOf(32f)
+    var strokeWidth by mutableStateOf(3f)
+    var eraserSize by mutableStateOf(48f)
 
     var selection by mutableStateOf<Set<String>>(emptySet())
 

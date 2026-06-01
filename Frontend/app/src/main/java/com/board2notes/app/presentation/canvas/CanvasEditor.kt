@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.toArgb
@@ -93,6 +94,16 @@ private enum class SingleAction { DrawPen, Erase, Pan, SelectInteract, None }
 private enum class SelectMode { Move, Resize, Marquee, None }
 private enum class Corner { TL, TR, BL, BR }
 
+private const val PAPER_WIDTH = CanvasPaper.WIDTH
+private const val PAPER_HEIGHT = CanvasPaper.HEIGHT
+private const val PAPER_VIEWPORT_PADDING = 18f
+private const val PAPER_OVERSCROLL = 72f
+
+private val PaperBounds = Rect(0f, 0f, PAPER_WIDTH, PAPER_HEIGHT)
+private val PaperSize = Size(PAPER_WIDTH, PAPER_HEIGHT)
+private val CanvasOutsideColor = Color(0xFFE2E5EA)
+private val PaperBorderColor = Color(0xFFE2E8F0)
+
 private fun screenToCanvas(point: Offset, offset: Offset, scale: Float): Offset =
     Offset((point.x - offset.x) / scale, (point.y - offset.y) / scale)
 
@@ -101,6 +112,61 @@ private fun canvasToScreen(point: Offset, offset: Offset, scale: Float): Offset 
 
 private fun normalizedRect(a: Offset, b: Offset): Rect =
     Rect(min(a.x, b.x), min(a.y, b.y), max(a.x, b.x), max(a.y, b.y))
+
+private fun pointOnPaper(point: Offset): Boolean = PaperBounds.contains(point)
+
+private fun clampPointToPaper(point: Offset): Offset =
+    Offset(point.x.coerceIn(0f, PAPER_WIDTH), point.y.coerceIn(0f, PAPER_HEIGHT))
+
+private fun fitPaperScale(canvasSize: IntSize): Float {
+    if (canvasSize.width <= 0 || canvasSize.height <= 0) return 1f
+    val availableWidth = (canvasSize.width.toFloat() - PAPER_VIEWPORT_PADDING * 2f).coerceAtLeast(1f)
+    return (availableWidth / PAPER_WIDTH).coerceAtLeast(0.1f)
+}
+
+private fun effectiveMinZoom(canvasSize: IntSize, input: CanvasInputSettings): Float {
+    val fit = fitPaperScale(canvasSize)
+    val configuredMin = input.minZoom.coerceAtLeast(0.1f)
+    val limitedMin = max(configuredMin, fit * 0.82f)
+    return min(limitedMin, fit).coerceAtMost(input.maxZoom.coerceAtLeast(0.1f))
+}
+
+private fun initialPaperScale(canvasSize: IntSize, input: CanvasInputSettings): Float {
+    val minZoom = effectiveMinZoom(canvasSize, input)
+    val maxZoom = input.maxZoom.coerceAtLeast(minZoom)
+    return fitPaperScale(canvasSize).coerceIn(minZoom, maxZoom)
+}
+
+private fun centeredPaperOffset(canvasSize: IntSize, scale: Float): Offset {
+    val paperWidth = PAPER_WIDTH * scale
+    val paperHeight = PAPER_HEIGHT * scale
+    val viewportWidth = canvasSize.width.toFloat()
+    val viewportHeight = canvasSize.height.toFloat()
+    return Offset(
+        x = if (paperWidth <= viewportWidth) (viewportWidth - paperWidth) / 2f else 0f,
+        y = if (paperHeight <= viewportHeight) (viewportHeight - paperHeight) / 2f else PAPER_VIEWPORT_PADDING
+    )
+}
+
+private fun clampViewportOffset(offset: Offset, scale: Float, canvasSize: IntSize): Offset {
+    if (canvasSize.width <= 0 || canvasSize.height <= 0) return offset
+    val viewportWidth = canvasSize.width.toFloat()
+    val viewportHeight = canvasSize.height.toFloat()
+    val paperWidth = PAPER_WIDTH * scale
+    val paperHeight = PAPER_HEIGHT * scale
+
+    fun clampAxis(value: Float, viewport: Float, content: Float): Float {
+        if (content <= viewport) return (viewport - content) / 2f
+        val minOffset = viewport - content - PAPER_OVERSCROLL
+        val maxOffset = PAPER_OVERSCROLL
+        return value.coerceIn(minOffset, maxOffset)
+    }
+
+    return Offset(
+        x = clampAxis(offset.x, viewportWidth, paperWidth),
+        y = clampAxis(offset.y, viewportHeight, paperHeight)
+    )
+}
 
 /**
  * Profesyonel çizim yüzeyi: kalem/parmak/basınç/avuç reddi (ayarlara bağlı), pan/zoom,
@@ -122,6 +188,7 @@ fun CanvasEditor(
 ) {
     val primary = MaterialTheme.colorScheme.primary
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var lastFittedPage by remember(noteId) { mutableStateOf<Int?>(null) }
 
     // Geçici (canlı) çizim durumu — pointer döngüsü tarafından güncellenir, render tarafından okunur.
     var liveStrokePoints by remember { mutableStateOf<List<Offset>>(emptyList()) }
@@ -133,6 +200,22 @@ fun CanvasEditor(
     var showWidthMenu by remember { mutableStateOf(false) }
     var showEraserMenu by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(canvasSize, controller.safePageIndex, input.minZoom, input.maxZoom) {
+        if (canvasSize.width <= 0 || canvasSize.height <= 0) return@LaunchedEffect
+        val minZoom = effectiveMinZoom(canvasSize, input)
+        val maxZoom = input.maxZoom.coerceAtLeast(minZoom)
+        if (lastFittedPage != controller.safePageIndex) {
+            val scale = initialPaperScale(canvasSize, input)
+            controller.viewportScale = scale
+            controller.viewportOffset = clampViewportOffset(centeredPaperOffset(canvasSize, scale), scale, canvasSize)
+            lastFittedPage = controller.safePageIndex
+        } else {
+            val scale = controller.viewportScale.coerceIn(minZoom, maxZoom)
+            controller.viewportScale = scale
+            controller.viewportOffset = clampViewportOffset(controller.viewportOffset, scale, canvasSize)
+        }
+    }
 
     // Görsel asset bitmap önbelleği
     val bitmapCache = remember(noteId) { mutableStateMapOf<String, ImageBitmap>() }
@@ -169,19 +252,22 @@ fun CanvasEditor(
             }
             if (bmp != null) {
                 val sc = controller.viewportScale
-                val maxW = (canvasSize.width / sc) * 0.78f
-                val maxH = (canvasSize.height / sc) * 0.72f
+                val maxW = PAPER_WIDTH * 0.86f
+                val maxH = PAPER_HEIGHT * 0.72f
                 val ratio = bmp.height.toFloat() / bmp.width.toFloat().coerceAtLeast(1f)
                 var w = min(maxW, bmp.width.toFloat())
                 var h = w * ratio
                 if (h > maxH) { h = maxH; w = h / ratio.coerceAtLeast(0.0001f) }
-                val center = screenToCanvas(
+                val visibleCenter = screenToCanvas(
                     Offset(canvasSize.width / 2f, canvasSize.height / 2f),
                     controller.viewportOffset, sc
                 )
+                val center = clampPointToPaper(visibleCenter)
+                val left = (center.x - w / 2f).coerceIn(0f, (PAPER_WIDTH - w).coerceAtLeast(0f))
+                val top = (center.y - h / 2f).coerceIn(0f, (PAPER_HEIGHT - h).coerceAtLeast(0f))
                 bitmapCache[asset] = bmp.asImageBitmap()
                 controller.addElement(
-                    ImageElement(asset = asset, left = center.x - w / 2f, top = center.y - h / 2f, width = w, height = h),
+                    ImageElement(asset = asset, left = left, top = top, width = w, height = h),
                     select = true
                 )
                 controller.tool = CanvasTool.Select
@@ -223,14 +309,14 @@ fun CanvasEditor(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(if (useDarkTheme) Color.Black else Color.White)
+            .background(CanvasOutsideColor)
             .onSizeChanged { canvasSize = it }
     ) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
                 .clipToBounds()
-                .pointerInput(controller.tool, input, controller.safePageIndex) {
+                .pointerInput(controller.tool, input, controller.safePageIndex, canvasSize) {
                     awaitEachGesture {
                         val firstEvent = awaitPointerEvent()
                         val firstDown = firstEvent.changes.firstOrNull { it.pressed } ?: return@awaitEachGesture
@@ -253,6 +339,9 @@ fun CanvasEditor(
 
                         // İlk dokunuş aksiyonunu belirle
                         action = decideAction(firstDown.type)
+                        if (!pointOnPaper(startCanvas) && action != SingleAction.Pan) {
+                            action = SingleAction.Pan
+                        }
                         when (action) {
                             SingleAction.DrawPen -> {
                                 liveStrokePoints = listOf(startCanvas)
@@ -314,7 +403,9 @@ fun CanvasEditor(
                                 if (pc != null && prevDist > 0f) {
                                     val zoom = (dist / prevDist).coerceIn(0.8f, 1.25f)
                                     val oldScale = controller.viewportScale
-                                    var newScale = (oldScale * zoom).coerceIn(input.minZoom, input.maxZoom)
+                                    val minZoom = effectiveMinZoom(canvasSize, input)
+                                    val maxZoom = input.maxZoom.coerceAtLeast(minZoom)
+                                    var newScale = (oldScale * zoom).coerceIn(minZoom, maxZoom)
                                     if (newScale.isNaN() || newScale.isInfinite()) {
                                         newScale = oldScale
                                     }
@@ -329,7 +420,7 @@ fun CanvasEditor(
                                         newOffset = controller.viewportOffset
                                     }
                                     controller.viewportScale = newScale
-                                    controller.viewportOffset = newOffset
+                                    controller.viewportOffset = clampViewportOffset(newOffset, newScale, canvasSize)
                                 }
                                 prevCentroid = centroid; prevDist = dist
                                 event.changes.forEach { it.consume() }
@@ -340,16 +431,26 @@ fun CanvasEditor(
                                 totalDrag += abs(delta.x) + abs(delta.y)
                                 when (action) {
                                     SingleAction.DrawPen -> {
-                                        liveStrokePoints = liveStrokePoints + canvasPt
-                                        liveStrokePressures = liveStrokePressures + pressureOf(ch.type, ch.pressure)
+                                        if (pointOnPaper(canvasPt)) {
+                                            liveStrokePoints = liveStrokePoints + canvasPt
+                                            liveStrokePressures = liveStrokePressures + pressureOf(ch.type, ch.pressure)
+                                        }
                                     }
                                     SingleAction.Erase -> {
                                         if (!erasing) { controller.beginErase(); erasing = true }
-                                        eraserCursor = canvasPt
-                                        controller.eraseStrokesAt(canvasPt, controller.eraserSize)
+                                        if (pointOnPaper(canvasPt)) {
+                                            eraserCursor = canvasPt
+                                            controller.eraseStrokesAt(canvasPt, controller.eraserSize)
+                                        } else {
+                                            eraserCursor = null
+                                        }
                                     }
                                     SingleAction.Pan -> {
-                                        controller.viewportOffset = controller.viewportOffset + delta
+                                        controller.viewportOffset = clampViewportOffset(
+                                            controller.viewportOffset + delta,
+                                            controller.viewportScale,
+                                            canvasSize
+                                        )
                                     }
                                     SingleAction.SelectInteract -> when (selectMode) {
                                         SelectMode.Move -> {
@@ -371,7 +472,7 @@ fun CanvasEditor(
                                                 }
                                             }
                                         }
-                                        SelectMode.Marquee -> { marqueeRect = normalizedRect(startCanvas, canvasPt) }
+                                        SelectMode.Marquee -> { marqueeRect = normalizedRect(startCanvas, clampPointToPaper(canvasPt)) }
                                         SelectMode.None -> {}
                                     }
                                     SingleAction.None -> {}
@@ -423,35 +524,45 @@ fun CanvasEditor(
         ) {
             val off = controller.viewportOffset
             val sc = controller.viewportScale
+            drawRect(CanvasOutsideColor, size = size)
             withTransform({ translate(off.x, off.y); scale(sc, sc, pivot = Offset.Zero) }) {
-                background?.let { bg ->
-                    drawImage(
-                        image = bg,
-                        dstSize = IntSize(bg.width, bg.height),
-                        colorFilter = if (useDarkTheme) invertFilter else null
-                    )
-                }
-                controller.currentPage().forEach { element ->
-                    when (element) {
-                        is StrokeElement -> drawStrokeElement(element, useDarkTheme)
-                        is ImageElement -> drawImageElement(element, bitmapCache[element.asset])
+                drawRect(Color.White, topLeft = Offset.Zero, size = PaperSize)
+                clipRect(left = 0f, top = 0f, right = PAPER_WIDTH, bottom = PAPER_HEIGHT) {
+                    background?.let { bg ->
+                        drawImage(
+                            image = bg,
+                            dstSize = IntSize(bg.width, bg.height),
+                            colorFilter = if (useDarkTheme) invertFilter else null
+                        )
+                    }
+                    controller.currentPage().forEach { element ->
+                        when (element) {
+                            is StrokeElement -> drawStrokeElement(element, useDarkTheme)
+                            is ImageElement -> drawImageElement(element, bitmapCache[element.asset])
+                        }
+                    }
+                    if (liveStrokePoints.isNotEmpty()) {
+                        drawRawStroke(liveStrokePoints, liveStrokePressures, controller.color, controller.strokeWidth, useDarkTheme)
+                    }
+                    eraserCursor?.let { c ->
+                        drawCircle(Color(0x33EF4444), radius = controller.eraserSize, center = c)
+                        drawCircle(Color(0xFFEF4444), radius = controller.eraserSize, center = c, style = Stroke(width = 1.5f / sc))
+                    }
+                    marqueeRect?.let { r ->
+                        drawRect(
+                            color = primary,
+                            topLeft = Offset(r.left, r.top),
+                            size = Size(r.width, r.height),
+                            style = Stroke(width = 1.8f / sc, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
+                        )
                     }
                 }
-                if (liveStrokePoints.isNotEmpty()) {
-                    drawRawStroke(liveStrokePoints, liveStrokePressures, controller.color, controller.strokeWidth, useDarkTheme)
-                }
-                eraserCursor?.let { c ->
-                    drawCircle(Color(0x33EF4444), radius = controller.eraserSize, center = c)
-                    drawCircle(Color(0xFFEF4444), radius = controller.eraserSize, center = c, style = Stroke(width = 1.5f / sc))
-                }
-                marqueeRect?.let { r ->
-                    drawRect(
-                        color = primary,
-                        topLeft = Offset(r.left, r.top),
-                        size = Size(r.width, r.height),
-                        style = Stroke(width = 1.8f / sc, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
-                    )
-                }
+                drawRect(
+                    color = PaperBorderColor,
+                    topLeft = Offset.Zero,
+                    size = PaperSize,
+                    style = Stroke(width = 1.25f / sc)
+                )
             }
 
             // Seçim kutusu + tutamaklar (ekran uzayında sabit boyutlu)
@@ -506,7 +617,7 @@ fun CanvasEditor(
                     DropdownMenu(expanded = showWidthMenu, onDismissRequest = { showWidthMenu = false }) {
                         Column(Modifier.width(220.dp).padding(12.dp)) {
                             Text("Kalem kalınlığı: ${controller.strokeWidth.roundToInt()}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                            Slider(value = controller.strokeWidth, onValueChange = { controller.strokeWidth = it }, valueRange = 2f..36f)
+                            Slider(value = controller.strokeWidth, onValueChange = { controller.strokeWidth = it }, valueRange = 1f..24f)
                             Canvas(Modifier.width(196.dp).height(28.dp)) {
                                 drawLine(controller.color, Offset(8f, size.height / 2f), Offset(size.width - 8f, size.height / 2f), strokeWidth = controller.strokeWidth, cap = StrokeCap.Round)
                             }

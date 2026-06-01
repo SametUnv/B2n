@@ -47,6 +47,7 @@ def health() -> dict[str, Any]:
         "model2_path": str(settings.model2_path),
         "require_cuda": settings.require_cuda,
         "use_amp": settings.use_amp,
+        "board_content_margin_ratio": settings.board_content_margin_ratio,
         "runtime": torch_runtime_info(settings.device),
     }
 
@@ -61,6 +62,11 @@ def models() -> dict[str, Any]:
             model2_service.metadata(),
             {"id": "ocr", "engine": "PaddleOCR", "lang": settings.ocr_lang, "lazy_loaded": True},
         ],
+        "postprocess": {
+            "board_content_margin_ratio": settings.board_content_margin_ratio,
+            "perspective_crop": "content_quad",
+            "outer_perspective_crop": "debug_artifact",
+        },
     }
 
 
@@ -165,7 +171,12 @@ async def pipeline(
             warnings=warnings,
             timings_ms=timings,
             artifacts=all_artifacts,
-            metadata={"threshold": threshold, "device": settings.device, "run_ocr": run_ocr},
+            metadata={
+                "threshold": threshold,
+                "device": settings.device,
+                "run_ocr": run_ocr,
+                "board_content_margin_ratio": settings.board_content_margin_ratio,
+            },
         )
         artifacts.save_json(job_id, job_dir, "pipeline_response", response.model_dump())
         return response
@@ -188,6 +199,12 @@ def save_model1_artifacts(job_id: str, job_dir, result: Model1Result) -> dict[st
         "mask_probability": artifacts.save_image(job_id, job_dir, "model1_mask_probability", result.mask_probability * 255.0),
         "overlay": artifacts.save_image(job_id, job_dir, "model1_overlay", result.overlay),
         "bbox_crop": artifacts.save_image(job_id, job_dir, "model1_bbox_crop", result.bbox_crop),
+        "outer_perspective_crop": artifacts.save_image(
+            job_id,
+            job_dir,
+            "model1_outer_perspective_crop",
+            result.outer_perspective_crop,
+        ),
         "perspective_crop": artifacts.save_image(job_id, job_dir, "model1_perspective_crop", result.perspective_crop),
     }
 
@@ -207,6 +224,7 @@ def model1_response(job_id: str, result: Model1Result, artifact_urls: dict[str, 
         job_id=job_id,
         bbox=bbox_model(result.bbox),
         quad=quad_model(result.quad),
+        content_quad=quad_model(result.content_quad),
         confidence=result.confidence,
         strategy=result.strategy,
         warnings=result.warnings,

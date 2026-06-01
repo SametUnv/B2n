@@ -39,6 +39,7 @@ class Model1Response(BaseModel):
     job_id: str
     bbox: BBox
     quad: Quad
+    content_quad: Quad
     confidence: float
     strategy: str
     warnings: list[str] = Field(default_factory=list)

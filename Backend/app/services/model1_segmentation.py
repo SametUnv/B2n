@@ -16,6 +16,7 @@ from app.services.geometry import (
     crop_bbox,
     detect_quad,
     draw_quad,
+    inset_quad,
     letterbox_rgb,
     mask_to_gray,
     overlay_mask,
@@ -29,6 +30,7 @@ from app.services.geometry import (
 class Model1Result:
     bbox: tuple[int, int, int, int]
     quad: np.ndarray
+    content_quad: np.ndarray
     confidence: float
     strategy: str
     mask: np.ndarray
@@ -36,6 +38,7 @@ class Model1Result:
     mask_image: np.ndarray
     overlay: np.ndarray
     bbox_crop: np.ndarray
+    outer_perspective_crop: np.ndarray
     perspective_crop: np.ndarray
     warnings: list[str]
     timings_ms: dict[str, float]
@@ -105,13 +108,20 @@ class Model1SegmentationService:
             warnings.append("Automatic board contour was weak; fallback geometry was used.")
 
         bbox_crop = crop_bbox(image_rgb, quad_detection.bbox)
+        content_quad = inset_quad(quad_detection.quad, self.settings.board_content_margin_ratio)
         try:
-            perspective_crop = warp_perspective(
+            outer_perspective_crop = warp_perspective(
                 image_rgb,
                 quad_detection.quad,
                 max_output_side=self.settings.perspective_max_output_side,
             )
+            perspective_crop = warp_perspective(
+                image_rgb,
+                content_quad,
+                max_output_side=self.settings.perspective_max_output_side,
+            )
         except Exception:
+            outer_perspective_crop = bbox_crop
             perspective_crop = bbox_crop
             warnings.append("Perspective correction failed; bounding-box crop was used.")
 
@@ -121,6 +131,7 @@ class Model1SegmentationService:
         return Model1Result(
             bbox=quad_detection.bbox,
             quad=quad_detection.quad,
+            content_quad=content_quad,
             confidence=quad_detection.confidence,
             strategy=quad_detection.strategy,
             mask=mask,
@@ -128,6 +139,7 @@ class Model1SegmentationService:
             mask_image=mask_to_gray(mask),
             overlay=overlay,
             bbox_crop=bbox_crop,
+            outer_perspective_crop=outer_perspective_crop,
             perspective_crop=perspective_crop,
             warnings=warnings,
             timings_ms=timings,

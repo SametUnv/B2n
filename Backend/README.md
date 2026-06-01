@@ -40,6 +40,17 @@ $env:B2N_USE_AMP="1"
 $env:B2N_MODEL2_BATCH_SIZE="4"
 ```
 
+Model 1 postprocess trims a small margin inside the detected board before sending the crop to Model 2.
+This removes physical board edges and screws that can remain in the segmentation. The default is `0.025`.
+
+```powershell
+$env:B2N_BOARD_CONTENT_MARGIN_RATIO="0.025"
+```
+
+Use `0` to disable the inner crop, or try `0.015..0.04` depending on how much border remains.
+The debug artifact `model1_outer_perspective_crop.png` keeps the full detected board, while
+`model1_perspective_crop.png` is the cleaned content crop used by the pipeline.
+
 Run a warmup request after startup to load weights and compile cuDNN choices before testing latency:
 
 ```powershell

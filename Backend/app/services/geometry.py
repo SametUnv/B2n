@@ -155,6 +155,15 @@ def expand_quad(quad: np.ndarray, width: int, height: int, margin_ratio: float =
     return expanded.astype(np.float32)
 
 
+def inset_quad(quad: np.ndarray, margin_ratio: float) -> np.ndarray:
+    margin_ratio = float(np.clip(margin_ratio, 0.0, 0.12))
+    if margin_ratio <= 0:
+        return quad.astype(np.float32)
+    center = quad.mean(axis=0, keepdims=True)
+    inset = center + (quad - center) * (1.0 - margin_ratio)
+    return inset.astype(np.float32)
+
+
 def sane_quad(quad: np.ndarray, width: int, height: int) -> bool:
     area = abs(cv2.contourArea(quad.reshape(-1, 1, 2)))
     if area < width * height * 0.003:

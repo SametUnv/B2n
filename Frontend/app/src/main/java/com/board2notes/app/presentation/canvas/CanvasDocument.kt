@@ -8,6 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
@@ -55,6 +56,13 @@ data class ImageElement(
 
 typealias CanvasPage = List<CanvasElement>
 
+object CanvasPaper {
+    const val WIDTH = 3200f
+    const val HEIGHT = 4525f
+    const val LEGACY_WIDTH = 1080f
+    const val LEGACY_HEIGHT = 1528f
+}
+
 data class CanvasDocument(
     val text: String,
     val pages: List<CanvasPage>
@@ -94,7 +102,13 @@ object CanvasDocumentCodec {
             page.forEach { element -> pageJson.put(elementToJson(element)) }
             pagesJson.put(pageJson)
         }
-        return text.trimEnd() + DOC_MARKER + pagesJson.toString()
+        val root = JSONObject().apply {
+            put("v", 3)
+            put("paperW", CanvasPaper.WIDTH.toDouble())
+            put("paperH", CanvasPaper.HEIGHT.toDouble())
+            put("pages", pagesJson)
+        }
+        return text.trimEnd() + DOC_MARKER + root.toString()
     }
 
     fun parse(body: String): CanvasDocument {
@@ -111,11 +125,14 @@ object CanvasDocumentCodec {
                 .split("~PAGE~")
                 .map { parseLegacyPayload(it) }
                 .ifEmpty { listOf(emptyList()) }
-            return CanvasDocument(text, pages)
+            return CanvasDocument(text, scalePagesFromPaper(pages, CanvasPaper.LEGACY_WIDTH, CanvasPaper.LEGACY_HEIGHT))
         }
         LEGACY_DRAWING_REGEX.find(body)?.let { match ->
             val text = body.substring(0, match.range.first)
-            return CanvasDocument(text, listOf(parseLegacyPayload(match.groupValues[1])))
+            return CanvasDocument(
+                text,
+                scalePagesFromPaper(listOf(parseLegacyPayload(match.groupValues[1])), CanvasPaper.LEGACY_WIDTH, CanvasPaper.LEGACY_HEIGHT)
+            )
         }
         return CanvasDocument(body, listOf(emptyList()))
     }
@@ -123,13 +140,45 @@ object CanvasDocumentCodec {
     private fun parsePagesJson(json: String): List<CanvasPage> {
         if (json.isBlank()) return listOf(emptyList())
         return runCatching {
-            val array = JSONArray(json)
-            val pages = (0 until array.length()).map { pageIndex ->
-                val pageJson = array.optJSONArray(pageIndex) ?: JSONArray()
-                (0 until pageJson.length()).mapNotNull { elementToModel(pageJson.optJSONObject(it)) }
+            val trimmed = json.trim()
+            if (trimmed.startsWith("{")) {
+                val root = JSONObject(trimmed)
+                val pages = parsePagesArray(root.optJSONArray("pages") ?: JSONArray())
+                val sourceW = root.optDouble("paperW", CanvasPaper.WIDTH.toDouble()).toFloat()
+                val sourceH = root.optDouble("paperH", CanvasPaper.HEIGHT.toDouble()).toFloat()
+                scalePagesFromPaper(pages, sourceW, sourceH)
+            } else {
+                scalePagesFromPaper(parsePagesArray(JSONArray(trimmed)), CanvasPaper.LEGACY_WIDTH, CanvasPaper.LEGACY_HEIGHT)
             }
-            pages.ifEmpty { listOf(emptyList()) }
         }.getOrElse { listOf(emptyList()) }
+    }
+
+    private fun parsePagesArray(array: JSONArray): List<CanvasPage> {
+        val pages = (0 until array.length()).map { pageIndex ->
+            val pageJson = array.optJSONArray(pageIndex) ?: JSONArray()
+            (0 until pageJson.length()).mapNotNull { elementToModel(pageJson.optJSONObject(it)) }
+        }
+        return pages.ifEmpty { listOf(emptyList()) }
+    }
+
+    private fun scalePagesFromPaper(pages: List<CanvasPage>, sourceWidth: Float, sourceHeight: Float): List<CanvasPage> {
+        if (sourceWidth <= 0f || sourceHeight <= 0f) return pages.ifEmpty { listOf(emptyList()) }
+        val sx = CanvasPaper.WIDTH / sourceWidth
+        val sy = CanvasPaper.HEIGHT / sourceHeight
+        if (abs(sx - 1f) < 0.001f && abs(sy - 1f) < 0.001f) return pages.ifEmpty { listOf(emptyList()) }
+        return pages.map { page ->
+            page.map { element ->
+                when (element) {
+                    is StrokeElement -> element.copy(points = element.points.map { Offset(it.x * sx, it.y * sy) })
+                    is ImageElement -> element.copy(
+                        left = element.left * sx,
+                        top = element.top * sy,
+                        width = element.width * sx,
+                        height = element.height * sy
+                    )
+                }
+            }
+        }.ifEmpty { listOf(emptyList()) }
     }
 
     private fun elementToJson(element: CanvasElement): JSONObject = when (element) {
@@ -180,7 +229,7 @@ object CanvasDocumentCodec {
                 StrokeElement(
                     id = json.optString("id", UUID.randomUUID().toString()),
                     colorArgb = json.optInt("c", Color.Black.toArgb()),
-                    baseWidth = json.optDouble("w", 6.0).toFloat(),
+                    baseWidth = json.optDouble("w", 3.0).toFloat(),
                     points = points,
                     pressures = pressures,
                     highlighter = json.optInt("hl", 0) == 1
