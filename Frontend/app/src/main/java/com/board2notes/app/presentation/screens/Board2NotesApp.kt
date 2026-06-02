@@ -2666,7 +2666,11 @@ private fun CreateNoteSheet(
 
 
 @Composable
+private fun darkAwareColor(lightColor: Color, darkColor: Color): Color {
+    return if (MaterialTheme.colorScheme.background.red < 0.2f) darkColor else lightColor
+}
 
+@Composable
 private fun NoteTypeChoiceRow(
 
     title: String,
@@ -2689,9 +2693,9 @@ private fun NoteTypeChoiceRow(
 
         shape = RoundedCornerShape(16.dp),
 
-        color = Color(0xFFF8FAFC),
+        color = darkAwareColor(Color(0xFFF8FAFC), MaterialTheme.colorScheme.surfaceVariant),
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -2764,6 +2768,8 @@ private fun BoardLoadingOverlay(message: String) {
 
 
     val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+    val loadingTrackColor = if (isDark) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f) else Color(0xFFE5E7EB)
+    val loadingProgressColor = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFF2563EB)
 
     Box(
 
@@ -2771,7 +2777,7 @@ private fun BoardLoadingOverlay(message: String) {
 
             .fillMaxSize()
 
-            .background(if (isDark) Color(0xFF020617).copy(alpha = 0.46f) else Color(0xFFF8FAFC).copy(alpha = 0.72f)),
+            .background(if (isDark) Color(0xFF050914).copy(alpha = 0.72f) else Color(0xFFF8FAFC).copy(alpha = 0.72f)),
 
         contentAlignment = Alignment.Center
 
@@ -2789,13 +2795,13 @@ private fun BoardLoadingOverlay(message: String) {
 
             shape = RoundedCornerShape(18.dp),
 
-            color = if (isDark) Color(0xFF111827) else Color.White,
+            color = if (isDark) MaterialTheme.colorScheme.surface else Color.White,
 
             tonalElevation = 4.dp,
 
             shadowElevation = 12.dp,
 
-            border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+            border = BorderStroke(1.dp, if (isDark) MaterialTheme.colorScheme.outlineVariant else Color(0xFFE2E8F0))
 
         ) {
 
@@ -2839,7 +2845,7 @@ private fun BoardLoadingOverlay(message: String) {
 
                     drawRoundRect(
 
-                        color = if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE5E7EB),
+                        color = loadingTrackColor,
 
                         size = size,
 
@@ -2857,7 +2863,7 @@ private fun BoardLoadingOverlay(message: String) {
 
                     drawRoundRect(
 
-                        color = Color(0xFF2563EB),
+                        color = loadingProgressColor,
 
                         topLeft = Offset(visibleStart, 0f),
 
@@ -2877,7 +2883,7 @@ private fun BoardLoadingOverlay(message: String) {
 
                     style = MaterialTheme.typography.labelSmall,
 
-                    color = if (isDark) Color.White.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
 
                     textAlign = TextAlign.Center,
 
@@ -3069,9 +3075,9 @@ private fun B2NoteNavItem(
 
                                 listOf(
 
-                                    Color(0xFFEFF6FF).copy(alpha = 0.9f),
+                                    darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.primaryContainer).copy(alpha = 0.9f),
 
-                                    Color(0xFFDBEAFE).copy(alpha = 0.7f)
+                                    darkAwareColor(Color(0xFFDBEAFE), MaterialTheme.colorScheme.surfaceVariant).copy(alpha = 0.7f)
 
                                 )
 
@@ -3081,7 +3087,7 @@ private fun B2NoteNavItem(
 
                         .border(
 
-                            BorderStroke(1.dp, Color(0xFF93C5FD).copy(alpha = 0.5f)),
+                            BorderStroke(1.dp, darkAwareColor(Color(0xFF93C5FD), MaterialTheme.colorScheme.primary).copy(alpha = 0.5f)),
 
                             RoundedCornerShape(20.dp)
 
@@ -3115,7 +3121,7 @@ private fun B2NoteNavItem(
 
                 contentDescription = null,
 
-                tint = if (selected) Color(0xFF1D4ED8) else Color(0xFF64748B),
+                tint = if (selected) darkAwareColor(Color(0xFF1D4ED8), MaterialTheme.colorScheme.primary) else MaterialTheme.colorScheme.onSurfaceVariant,
 
                 modifier = Modifier.size(22.dp)
 
@@ -3147,7 +3153,7 @@ private fun B2NoteNavItem(
 
                         fontWeight = FontWeight.Bold,
 
-                        color = Color(0xFF1D4ED8)
+                        color = darkAwareColor(Color(0xFF1D4ED8), MaterialTheme.colorScheme.primary)
 
                     )
 
@@ -3171,11 +3177,11 @@ private fun b2NoteNavigationItemColors() = NavigationBarItemDefaults.colors(
 
     selectedTextColor = MaterialTheme.colorScheme.primary,
 
-    indicatorColor = Color(0xFFEFF6FF),
+    indicatorColor = darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.primaryContainer),
 
-    unselectedIconColor = Color(0xFF64748B),
+    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
 
-    unselectedTextColor = Color(0xFF64748B)
+    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
 
 )
 
@@ -3420,13 +3426,13 @@ private fun HomeScreen(
 
                         shape = RoundedCornerShape(16.dp),
 
-                        color = if (isHovered) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else Color.White,
+                        color = if (isHovered) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f) else MaterialTheme.colorScheme.surface,
 
                         border = BorderStroke(
 
                             width = if (isHovered) 2.dp else 1.dp,
 
-                            color = if (isHovered) MaterialTheme.colorScheme.primary else Color(0xFFEFF6FF)
+                            color = if (isHovered) MaterialTheme.colorScheme.primary else darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.outlineVariant)
 
                         ),
 
@@ -4002,7 +4008,7 @@ private fun SamsungNoteCard(
 
             width = if (isSelected) 2.5.dp else 1.dp,
 
-            color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFFEFF6FF)
+            color = if (isSelected) MaterialTheme.colorScheme.primary else darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.outlineVariant)
 
         )
 
@@ -4302,7 +4308,7 @@ private fun SamsungNoteCard(note: SavedNote, onClick: () -> Unit) {
 
         tonalElevation = 1.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -4542,7 +4548,7 @@ private fun HomeEmptyNotesCard() {
 
         shadowElevation = 2.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -4652,7 +4658,7 @@ private fun SwipeableNoteActions(
 
             .clip(RoundedCornerShape(18.dp))
 
-            .background(Color(0xFFF1F5F9))
+            .background(darkAwareColor(Color(0xFFF1F5F9), MaterialTheme.colorScheme.surfaceVariant))
 
             .height(IntrinsicSize.Max)
 
@@ -5402,7 +5408,7 @@ private fun SamsungCaptureScreen(onPick: () -> Unit, onCamera: () -> Unit) {
 
             .fillMaxSize()
 
-            .background(Color.White)
+            .background(darkAwareColor(Color.White, MaterialTheme.colorScheme.background))
 
             .padding(horizontal = 24.dp)
 
@@ -5450,9 +5456,9 @@ private fun SamsungCaptureScreen(onPick: () -> Unit, onCamera: () -> Unit) {
 
             shape = RoundedCornerShape(20.dp),
 
-            color = Color(0xFFF8FAFC),
+            color = darkAwareColor(Color(0xFFF8FAFC), MaterialTheme.colorScheme.surfaceVariant),
 
-            border = BorderStroke(1.dp, Color(0xFFEFF6FF))
+            border = BorderStroke(1.dp, darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.outlineVariant))
 
         ) {
 
@@ -5638,7 +5644,7 @@ private fun SamsungImageReviewScreen(
 
             .fillMaxSize()
 
-            .background(Color.White)
+            .background(darkAwareColor(Color.White, MaterialTheme.colorScheme.background))
 
     ) {
 
@@ -5690,9 +5696,9 @@ private fun SamsungImageReviewScreen(
 
                 shape = RoundedCornerShape(22.dp),
 
-                color = Color(0xFFF8FAFC),
+                color = darkAwareColor(Color(0xFFF8FAFC), MaterialTheme.colorScheme.surfaceVariant),
 
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
             ) {
 
@@ -5818,9 +5824,9 @@ private fun MinimalBoardMockCard(modifier: Modifier = Modifier) {
 
         shape = RoundedCornerShape(24.dp),
 
-        color = Color(0xFFF8FAFC),
+        color = darkAwareColor(Color(0xFFF8FAFC), MaterialTheme.colorScheme.surfaceVariant),
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -6174,7 +6180,7 @@ private fun ImageReviewScreen(state: Board2NotesUiState, viewModel: Board2NotesV
 
                 shadowElevation = 2.dp,
 
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
             ) {
 
@@ -6810,7 +6816,7 @@ private fun CropPreviewPanel(content: @Composable () -> Unit) {
 
         shadowElevation = 2.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -6842,7 +6848,7 @@ private fun CropPreviewPanel(content: @Composable () -> Unit) {
 
                     shape = RoundedCornerShape(999.dp),
 
-                    color = Color(0xFFEFF6FF)
+                    color = darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.primaryContainer)
 
                 ) {
 
@@ -6870,9 +6876,9 @@ private fun CropPreviewPanel(content: @Composable () -> Unit) {
 
                 shape = RoundedCornerShape(18.dp),
 
-                color = Color(0xFFF8FAFC),
+                color = darkAwareColor(Color(0xFFF8FAFC), MaterialTheme.colorScheme.surfaceVariant),
 
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
             ) {
 
@@ -6906,7 +6912,7 @@ private fun CropThresholdPanel(threshold: Float, onThresholdChange: (Float) -> U
 
         tonalElevation = 1.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -6990,7 +6996,7 @@ private fun CropActionPanel(
 
         shadowElevation = 1.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -7100,7 +7106,7 @@ private fun CropResultPanel(content: @Composable () -> Unit) {
 
         tonalElevation = 1.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -7152,7 +7158,7 @@ private fun ManualCornerEditor(state: Board2NotesUiState, viewModel: Board2Notes
 
         tonalElevation = 1.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -7192,9 +7198,9 @@ private fun ManualCornerEditor(state: Board2NotesUiState, viewModel: Board2Notes
 
                     shape = RoundedCornerShape(16.dp),
 
-                    color = Color(0xFFF8FAFC),
+                    color = darkAwareColor(Color(0xFFF8FAFC), MaterialTheme.colorScheme.surfaceVariant),
 
-                    border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+                    border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
                 ) {
 
@@ -8864,7 +8870,7 @@ private fun NoteDetailScreen(
 
             tonalElevation = 1.dp,
 
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
         ) {
 
@@ -8988,7 +8994,7 @@ private fun NoteDetailScreen(
 
                 color = MaterialTheme.colorScheme.surface,
 
-                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant)),
 
                 tonalElevation = 1.dp
 
@@ -9048,7 +9054,7 @@ private fun NoteDetailScreen(
 
             tonalElevation = 1.dp,
 
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
         ) {
 
@@ -9234,7 +9240,7 @@ private fun NoteDetailScreen(
 
             tonalElevation = 1.dp,
 
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
         ) {
 
@@ -9424,7 +9430,7 @@ private fun ArchiveScreen(
 
             tonalElevation = 1.dp,
 
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
         ) {
 
@@ -9530,7 +9536,7 @@ private fun ArchiveNoteCard(
 
         tonalElevation = 1.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -9650,7 +9656,7 @@ private fun SamsungSettingsScreen(
 
                     color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
 
-                    border = if (isSelected) null else BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                    border = if (isSelected) null else BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant)),
 
                     modifier = Modifier.padding(bottom = 8.dp)
 
@@ -10022,9 +10028,9 @@ private fun SamsungSettingsSection(title: String, content: @Composable ColumnSco
 
         shape = RoundedCornerShape(18.dp),
 
-        color = Color.White,
+        color = MaterialTheme.colorScheme.surface,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant)),
 
         tonalElevation = 0.dp
 
@@ -10322,7 +10328,7 @@ private fun SettingsHeroCard() {
 
         shadowElevation = 2.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -10384,7 +10390,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 
         tonalElevation = 1.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -10522,9 +10528,9 @@ private fun SettingActionRow(
 
         shape = RoundedCornerShape(16.dp),
 
-        color = Color(0xFFF8FAFC),
+        color = darkAwareColor(Color(0xFFF8FAFC), MaterialTheme.colorScheme.surfaceVariant),
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -10666,7 +10672,7 @@ private fun AboutScreen() {
 
             tonalElevation = 1.dp,
 
-            border = BorderStroke(1.dp, Color(0xFFEFF6FF)),
+            border = BorderStroke(1.dp, darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.outlineVariant)),
 
             shadowElevation = 2.dp
 
@@ -10776,7 +10782,7 @@ private fun AboutInfoLine(
 
         Spacer(Modifier.height(14.dp))
 
-        Divider(color = Color(0xFFE2E8F0))
+        Divider(color = darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
         Spacer(Modifier.height(14.dp))
 
@@ -10916,7 +10922,7 @@ private fun PipelineStepper(current: Int) {
 
                 isDone -> MaterialTheme.colorScheme.secondary
 
-                else -> Color(0xFFE2E8F0)
+                else -> darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant)
 
             }
 
@@ -11248,7 +11254,7 @@ private fun SecondaryActionButton(
 
         colors = ButtonDefaults.filledTonalButtonColors(
 
-            containerColor = Color(0xFFF1F5F9),
+            containerColor = darkAwareColor(Color(0xFFF1F5F9), MaterialTheme.colorScheme.surfaceVariant),
 
             contentColor = MaterialTheme.colorScheme.secondary
 
@@ -11334,9 +11340,9 @@ private fun CompactPillButton(
 
         shape = RoundedCornerShape(999.dp),
 
-        color = Color(0xFFEFF6FF),
+        color = darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.primaryContainer),
 
-        border = BorderStroke(1.dp, Color(0xFFDBEAFE))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFDBEAFE), MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)))
 
     ) {
 
@@ -11564,7 +11570,7 @@ private fun FolderScreen(
 
             shadowElevation = 2.dp,
 
-            border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+            border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
         ) {
 
@@ -11636,9 +11642,9 @@ private fun FolderScreen(
 
                         shape = RoundedCornerShape(18.dp),
 
-                        color = Color(0xFFEFF6FF),
+                        color = darkAwareColor(Color(0xFFEFF6FF), MaterialTheme.colorScheme.primaryContainer),
 
-                        border = BorderStroke(1.dp, Color(0xFFDBEAFE))
+                        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFDBEAFE), MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)))
 
                     ) {
 
@@ -11814,7 +11820,7 @@ private fun FolderEmptyState() {
 
         tonalElevation = 1.dp,
 
-        border = BorderStroke(1.dp, Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
@@ -11898,7 +11904,7 @@ private fun FolderNoteCard(
 
         tonalElevation = 1.dp,
 
-        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else Color(0xFFE2E8F0))
+        border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
 
     ) {
 
