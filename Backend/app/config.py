@@ -37,7 +37,7 @@ def load_settings() -> Settings:
         os.getenv("B2N_MODEL1_PATH", repo_root / "Models" / "TTM-V2" / "stage3_polish_final_best.pt")
     ).resolve()
     model2_path = Path(
-        os.getenv("B2N_MODEL2_PATH", repo_root / "Models" / "YGM 4. Model B2N Nafnet" / "final_model.pt")
+        os.getenv("B2N_MODEL2_PATH", repo_root / "Models" / "YGM V3 Model B2N Nafnet" / "final_model.pt")
     ).resolve()
     requested_device = os.getenv("B2N_DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
     require_cuda = os.getenv("B2N_REQUIRE_CUDA", "0").strip().lower() in {"1", "true", "yes", "on"}

@@ -13,7 +13,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 The service uses these model paths by default:
 
 - `../Models/TTM-V2/stage3_polish_final_best.pt`
-- `../Models/YGM 4. Model B2N Nafnet/final_model.pt`
+- `../Models/YGM V3 Model B2N Nafnet/final_model.pt`
 
 Override them with environment variables if needed:
 
