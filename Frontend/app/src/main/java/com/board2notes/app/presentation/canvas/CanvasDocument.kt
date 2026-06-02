@@ -49,6 +49,10 @@ data class ImageElement(
     val width: Float,
     val height: Float,
     val rotation: Float = 0f,
+    val cropLeft: Float = 0f,
+    val cropTop: Float = 0f,
+    val cropRight: Float = 0f,
+    val cropBottom: Float = 0f,
     val initialLeft: Float = left,
     val initialTop: Float = top,
     val initialWidth: Float = width,
@@ -215,6 +219,10 @@ object CanvasDocumentCodec {
             put("w", round1(element.width))
             put("h", round1(element.height))
             put("r", round1(element.rotation))
+            put("cl", round2(element.cropLeft))
+            put("ct", round2(element.cropTop))
+            put("cr", round2(element.cropRight))
+            put("cb", round2(element.cropBottom))
             put("ox", round1(element.initialLeft))
             put("oy", round1(element.initialTop))
             put("ow", round1(element.initialWidth))
@@ -258,6 +266,10 @@ object CanvasDocumentCodec {
                     width = json.optDouble("w", 1.0).toFloat().coerceAtLeast(1f),
                     height = json.optDouble("h", 1.0).toFloat().coerceAtLeast(1f),
                     rotation = json.optDouble("r", 0.0).toFloat(),
+                    cropLeft = json.optDouble("cl", 0.0).toFloat().coerceIn(0f, 0.95f),
+                    cropTop = json.optDouble("ct", 0.0).toFloat().coerceIn(0f, 0.95f),
+                    cropRight = json.optDouble("cr", 0.0).toFloat().coerceIn(0f, 0.95f),
+                    cropBottom = json.optDouble("cb", 0.0).toFloat().coerceIn(0f, 0.95f),
                     initialLeft = json.optDouble("ox", json.optDouble("x", 0.0)).toFloat(),
                     initialTop = json.optDouble("oy", json.optDouble("y", 0.0)).toFloat(),
                     initialWidth = json.optDouble("ow", json.optDouble("w", 1.0)).toFloat().coerceAtLeast(1f),
