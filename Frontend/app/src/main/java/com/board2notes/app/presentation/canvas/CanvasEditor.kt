@@ -198,7 +198,9 @@ fun CanvasEditor(
     isFullscreen: Boolean = false,
     onFullscreenChange: (Boolean) -> Unit = {},
     pendingInsertAsset: String? = null,
+    pendingInsertPageIndex: Int? = null,
     onPendingInsertConsumed: () -> Unit = {},
+    allowLegacyBackgroundFallback: Boolean = false,
     useDarkTheme: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -256,20 +258,27 @@ fun CanvasEditor(
         }
     }
 
-    // Eski (legacy) arka plan sayfa görseli (canvas.png / canvas_page_N.png)
+    // Düzenleme arka planı önizlemeden ayrıdır. Eski belgelerde canvas.png bir kez fallback olarak okunur.
     var background by remember { mutableStateOf<ImageBitmap?>(null) }
-    LaunchedEffect(noteId, controller.safePageIndex) {
+    LaunchedEffect(noteId, controller.safePageIndex, allowLegacyBackgroundFallback) {
         background = withContext(Dispatchers.IO) {
-            val dir = CanvasAssets.noteDir(filesDir, noteId)
-            val file = if (controller.safePageIndex == 0) File(dir, "canvas.png") else File(dir, "canvas_page_${controller.safePageIndex}.png")
-            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap() else null
+            val dedicated = CanvasAssets.backgroundFile(filesDir, noteId, controller.safePageIndex)
+            val legacy = CanvasAssets.previewFile(filesDir, noteId, controller.safePageIndex)
+            val file = dedicated.takeIf { it.exists() }
+                ?: legacy.takeIf { allowLegacyBackgroundFallback && it.exists() }
+            file?.let { BitmapFactory.decodeFile(it.absolutePath)?.asImageBitmap() }
         }
     }
 
     // Tahta çıktısı / galeri görseli: merkezi ve seçili olarak yerleştir (canvasSize bilindiğinde).
-    LaunchedEffect(pendingInsertAsset, canvasSize) {
+    LaunchedEffect(pendingInsertAsset, pendingInsertPageIndex, canvasSize, controller.safePageIndex) {
         val asset = pendingInsertAsset
         if (asset != null && canvasSize.width > 0 && canvasSize.height > 0) {
+            val targetPageIndex = pendingInsertPageIndex?.coerceIn(0, controller.pageCount - 1)
+            if (targetPageIndex != null && targetPageIndex != controller.safePageIndex) {
+                controller.goToPage(targetPageIndex)
+                return@LaunchedEffect
+            }
             val file = CanvasAssets.imageFile(filesDir, noteId, asset)
             val bmp = withContext(Dispatchers.IO) {
                 if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
@@ -343,7 +352,7 @@ fun CanvasEditor(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(CanvasOutsideColor)
+            .background(canvasOutsideColor)
             .onSizeChanged { canvasSize = it }
     ) {
         Canvas(
@@ -600,15 +609,14 @@ fun CanvasEditor(
         ) {
             val off = controller.viewportOffset
             val sc = controller.viewportScale
-            drawRect(CanvasOutsideColor, size = size)
+            drawRect(canvasOutsideColor, size = size)
             withTransform({ translate(off.x, off.y); scale(sc, sc, pivot = Offset.Zero) }) {
-                drawRect(Color.White, topLeft = Offset.Zero, size = PaperSize)
+                drawRect(paperColor, topLeft = Offset.Zero, size = PaperSize)
                 clipRect(left = 0f, top = 0f, right = PAPER_WIDTH, bottom = PAPER_HEIGHT) {
                     background?.let { bg ->
                         drawImage(
                             image = bg,
-                            dstSize = IntSize(bg.width, bg.height),
-                            colorFilter = if (useDarkTheme) invertFilter else null
+                            dstSize = IntSize(PAPER_WIDTH.roundToInt(), PAPER_HEIGHT.roundToInt())
                         )
                     }
                     controller.currentPage().forEach { element ->
@@ -634,7 +642,7 @@ fun CanvasEditor(
                     }
                 }
                 drawRect(
-                    color = PaperBorderColor,
+                    color = paperBorderColor,
                     topLeft = Offset.Zero,
                     size = PaperSize,
                     style = Stroke(width = 1.25f / sc)

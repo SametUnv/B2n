@@ -13,6 +13,7 @@ import com.board2notes.app.presentation.canvas.CanvasElement
 import com.board2notes.app.presentation.canvas.StrokeElement
 import com.board2notes.app.presentation.canvas.ImageElement
 import com.board2notes.app.presentation.canvas.CanvasAssets
+import com.board2notes.app.presentation.canvas.CanvasPaper
 import kotlin.math.max
 import kotlin.math.min
 
@@ -33,36 +34,61 @@ object CanvasNoteComposer {
         noteId: String,
         page: CanvasPage,
         width: Int = DEFAULT_WIDTH,
-        height: Int = DEFAULT_HEIGHT
+        height: Int = DEFAULT_HEIGHT,
+        backgroundBitmap: Bitmap? = null
     ): Bitmap {
         val bitmap = createBlankCanvas(width, height)
         val canvas = Canvas(bitmap)
+        val scaleX = width / CanvasPaper.WIDTH
+        val scaleY = height / CanvasPaper.HEIGHT
+        val strokeScale = min(scaleX, scaleY)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG).apply {
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
             style = Paint.Style.STROKE
         }
 
+        backgroundBitmap?.let { background ->
+            canvas.drawBitmap(
+                background,
+                null,
+                RectF(0f, 0f, width.toFloat(), height.toFloat()),
+                Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            )
+        }
+
         page.forEach { element ->
             when (element) {
                 is StrokeElement -> {
-                    if (element.points.size >= 2) {
+                    if (element.points.isNotEmpty()) {
                         paint.color = element.colorArgb
-                        paint.strokeWidth = element.baseWidth
+                        paint.strokeWidth = element.baseWidth * strokeScale
                         if (element.highlighter) {
                             paint.alpha = 120 // Semi-transparent for highlighters
                         } else {
                             paint.alpha = 255
                         }
-                        
-                        val path = Path()
-                        val first = element.points.first()
-                        path.moveTo(first.x, first.y)
-                        for (i in 1 until element.points.size) {
-                            val pt = element.points[i]
-                            path.lineTo(pt.x, pt.y)
+
+                        if (element.points.size == 1) {
+                            val point = element.points.first()
+                            paint.style = Paint.Style.FILL
+                            canvas.drawCircle(
+                                point.x * scaleX,
+                                point.y * scaleY,
+                                element.baseWidth * strokeScale / 2f,
+                                paint
+                            )
+                            paint.style = Paint.Style.STROKE
+                        } else {
+                            val path = Path()
+                            val first = element.points.first()
+                            path.moveTo(first.x * scaleX, first.y * scaleY)
+                            for (i in 1 until element.points.size) {
+                                val pt = element.points[i]
+                                path.lineTo(pt.x * scaleX, pt.y * scaleY)
+                            }
+                            canvas.drawPath(path, paint)
                         }
-                        canvas.drawPath(path, paint)
                     }
                 }
                 is ImageElement -> {
@@ -70,9 +96,23 @@ object CanvasNoteComposer {
                     if (file.exists()) {
                         val imgBmp = BitmapFactory.decodeFile(file.absolutePath)
                         if (imgBmp != null) {
-                            val destRect = RectF(element.left, element.top, element.left + element.width, element.top + element.height)
+                            val destRect = RectF(
+                                element.left * scaleX,
+                                element.top * scaleY,
+                                (element.left + element.width) * scaleX,
+                                (element.top + element.height) * scaleY
+                            )
                             val imgPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+                            val checkpoint = canvas.save()
+                            if (element.rotation != 0f) {
+                                canvas.rotate(
+                                    element.rotation,
+                                    element.center.x * scaleX,
+                                    element.center.y * scaleY
+                                )
+                            }
                             canvas.drawBitmap(imgBmp, null, destRect, imgPaint)
+                            canvas.restoreToCount(checkpoint)
                         }
                     }
                 }

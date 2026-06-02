@@ -1,6 +1,7 @@
 package com.board2notes.app.data.notes
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import com.board2notes.app.data.image.CanvasNoteComposer
 import com.board2notes.app.domain.model.FormattedNote
 import com.board2notes.app.domain.model.NoteType
@@ -13,11 +14,13 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.board2notes.app.presentation.canvas.CanvasAssets
 import com.board2notes.app.presentation.canvas.CanvasDocument
+import com.board2notes.app.presentation.canvas.CanvasDocumentCodec
 import java.io.File
 import java.util.UUID
 
-class FileNoteRepository(filesDir: File) : NoteRepository {
+class FileNoteRepository(private val filesDir: File) : NoteRepository {
     private val notesRoot = File(filesDir, "notes")
     private val indexFile = File(notesRoot, "notes.json")
     private val mutex = Mutex()
@@ -36,7 +39,7 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
 
     override suspend fun getNote(id: String): SavedNote? = withContext(Dispatchers.IO) {
         mutex.withLock {
-            readIndex().firstOrNull { it.id == id && !it.isDeleted }
+            readIndex().firstOrNull { it.id == id && !it.isDeleted }?.also(::migrateLegacyCanvasBackground)
         }
     }
 
@@ -47,14 +50,14 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
             val id = UUID.randomUUID().toString()
             val noteDir = File(notesRoot, id).apply { mkdirs() }
             val canvasPath = if (noteType == NoteType.Canvas) {
-                writeBitmap(CanvasNoteComposer.createBlankCanvas(), File(noteDir, "canvas.png"))
+                writeBitmap(CanvasNoteComposer.createBlankCanvas(), CanvasAssets.previewFile(filesDir, id))
             } else {
                 null
             }
             val saved = SavedNote(
                 id = id,
                 title = if (noteType == NoteType.Canvas) "Yeni Canvas Notu" else "Yeni Yazı Notu",
-                body = "",
+                body = if (noteType == NoteType.Canvas) CanvasDocument.blank().bodyString() else "",
                 courseName = "",
                 createdAtEpochMs = now,
                 updatedAtEpochMs = now,
@@ -86,17 +89,21 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
             val id = UUID.randomUUID().toString()
             val noteDir = File(notesRoot, id).apply { mkdirs() }
             val whitePagePath = whitePageBitmap?.let { writeBitmap(it, File(noteDir, "white_page.png")) }
-            val canvasPath = when {
-                canvasBitmap != null -> writeBitmap(canvasBitmap, File(noteDir, "canvas.png"))
-                noteType == NoteType.Canvas && whitePageBitmap != null -> writeBitmap(
+            val canvasBaseBitmap = when {
+                canvasBitmap != null -> canvasBitmap
+                noteType == NoteType.Canvas && whitePageBitmap != null ->
                     CanvasNoteComposer.composeInkOnCanvas(
                         baseBitmap = CanvasNoteComposer.createBlankCanvas(),
                         inkSource = whitePageBitmap
-                    ),
-                    File(noteDir, "canvas.png")
-                )
-                noteType == NoteType.Canvas -> writeBitmap(CanvasNoteComposer.createBlankCanvas(), File(noteDir, "canvas.png"))
+                    )
+                noteType == NoteType.Canvas -> CanvasNoteComposer.createBlankCanvas()
                 else -> null
+            }
+            val canvasPath = canvasBaseBitmap?.let { bitmap ->
+                if (canvasBitmap != null || whitePageBitmap != null) {
+                    writeBitmap(bitmap, CanvasAssets.backgroundFile(filesDir, id))
+                }
+                writeBitmap(bitmap, CanvasAssets.previewFile(filesDir, id))
             }
             val saved = SavedNote(
                 id = id,
@@ -126,11 +133,21 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
                 
                 val canvasPath = if (current.noteType == NoteType.Canvas && body.isNotBlank()) {
                     runCatching {
+                        migrateLegacyCanvasBackground(current)
                         val doc = CanvasDocument.fromBody(body)
-                        val firstPage = doc.pages.firstOrNull() ?: emptyList()
-                        val bmp = CanvasNoteComposer.renderPageToBitmap(notesRoot.parentFile!!, id, firstPage)
-                        val noteDir = File(notesRoot, id).apply { mkdirs() }
-                        writeBitmap(bmp, File(noteDir, "canvas.png"))
+                        doc.pages.forEachIndexed { pageIndex, page ->
+                            val background = CanvasAssets.backgroundFile(filesDir, id, pageIndex)
+                                .takeIf { it.exists() }
+                                ?.let { BitmapFactory.decodeFile(it.absolutePath) }
+                            val bitmap = CanvasNoteComposer.renderPageToBitmap(
+                                filesDir = filesDir,
+                                noteId = id,
+                                page = page,
+                                backgroundBitmap = background
+                            )
+                            writeBitmap(bitmap, CanvasAssets.previewFile(filesDir, id, pageIndex))
+                        }
+                        CanvasAssets.previewFile(filesDir, id).absolutePath
                     }.getOrNull() ?: current.canvasImagePath
                 } else {
                     current.canvasImagePath
@@ -152,9 +169,7 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
         mutex.withLock {
             val notes = readIndex()
             val current = notes.firstOrNull { it.id == id } ?: return@withLock null
-            val noteDir = File(notesRoot, id).apply { mkdirs() }
-            val filename = if (pageIndex == 0) "canvas.png" else "canvas_page_${pageIndex}.png"
-            val filePath = writeBitmap(canvasBitmap, File(noteDir, filename))
+            val filePath = writeBitmap(canvasBitmap, CanvasAssets.previewFile(filesDir, id, pageIndex))
             val updated = current.copy(
                 noteType = NoteType.Canvas,
                 canvasImagePath = if (pageIndex == 0) filePath else current.canvasImagePath,
@@ -197,6 +212,35 @@ class FileNoteRepository(filesDir: File) : NoteRepository {
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, output)
         }
         return file.absolutePath
+    }
+
+    private fun migrateLegacyCanvasBackground(note: SavedNote) {
+        if (note.noteType != NoteType.Canvas) return
+        val background = CanvasAssets.backgroundFile(filesDir, note.id)
+        if (background.exists()) return
+        if (CanvasDocumentCodec.hasStructuredDocument(note.body)) {
+            val whitePage = note.whitePageImagePath
+                ?.let(::File)
+                ?.takeIf { it.exists() }
+                ?.let { BitmapFactory.decodeFile(it.absolutePath) }
+                ?: return
+            writeBitmap(
+                CanvasNoteComposer.composeInkOnCanvas(CanvasNoteComposer.createBlankCanvas(), whitePage),
+                background
+            )
+            return
+        }
+        val noteDir = CanvasAssets.noteDir(filesDir, note.id)
+        noteDir.listFiles().orEmpty().forEach { preview ->
+            val pageIndex = when {
+                preview.name == "canvas.png" -> 0
+                preview.name.startsWith("canvas_page_") && preview.name.endsWith(".png") ->
+                    preview.name.removePrefix("canvas_page_").removeSuffix(".png").toIntOrNull()
+                else -> null
+            } ?: return@forEach
+            val pageBackground = CanvasAssets.backgroundFile(filesDir, note.id, pageIndex)
+            if (!pageBackground.exists()) preview.copyTo(pageBackground)
+        }
     }
 
     private fun readIndex(): List<SavedNote> {

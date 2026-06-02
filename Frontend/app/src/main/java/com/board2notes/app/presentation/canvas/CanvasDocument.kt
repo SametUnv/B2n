@@ -90,6 +90,12 @@ object CanvasAssets {
     fun imageFile(filesDir: File, noteId: String, asset: String): File =
         File(noteDir(filesDir, noteId), asset)
 
+    fun previewFile(filesDir: File, noteId: String, pageIndex: Int = 0): File =
+        File(noteDir(filesDir, noteId), if (pageIndex == 0) "canvas.png" else "canvas_page_$pageIndex.png")
+
+    fun backgroundFile(filesDir: File, noteId: String, pageIndex: Int = 0): File =
+        File(noteDir(filesDir, noteId), if (pageIndex == 0) "canvas_background.png" else "canvas_background_page_$pageIndex.png")
+
     fun newImageAssetName(): String = "img_${UUID.randomUUID()}.png"
 }
 
@@ -101,6 +107,9 @@ object CanvasDocumentCodec {
     private const val DOC_MARKER = "\n\n[[B2N_CANVAS_V2]]\n"
     private val LEGACY_PAGES_REGEX = """\n\n\[CanvasPages:(.*)\]""".toRegex(RegexOption.DOT_MATCHES_ALL)
     private val LEGACY_DRAWING_REGEX = """\n\n\[DrawingData:(.*)\]""".toRegex(RegexOption.DOT_MATCHES_ALL)
+
+    fun hasStructuredDocument(body: String): Boolean =
+        body.contains(DOC_MARKER) || LEGACY_PAGES_REGEX.containsMatchIn(body) || LEGACY_DRAWING_REGEX.containsMatchIn(body)
 
     fun serialize(text: String, pages: List<CanvasPage>): String {
         val safePages = pages.ifEmpty { listOf(emptyList()) }

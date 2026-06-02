@@ -52,5 +52,6 @@ data class Board2NotesUiState(
     val pendingScanPageIndex: Int? = null,
     // Tahta çıktısı koyulaştırılıp asset olarak yazıldıktan sonra, editörün canvas'a
     // merkezi/seçili ImageElement olarak yerleştireceği asset dosya adı.
-    val pendingCanvasImageAsset: String? = null
+    val pendingCanvasImageAsset: String? = null,
+    val pendingCanvasImagePageIndex: Int? = null
 )
