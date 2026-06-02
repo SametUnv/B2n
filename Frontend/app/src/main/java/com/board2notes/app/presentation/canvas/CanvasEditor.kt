@@ -327,9 +327,9 @@ fun CanvasEditor(
         )
     }
 
-    val canvasOutsideColor = if (useDarkTheme) Color(0xFF111827) else CanvasOutsideColor
-    val paperColor = if (useDarkTheme) Color(0xFF111827) else Color.White
-    val paperBorderColor = if (useDarkTheme) Color(0xFF475569) else PaperBorderColor
+    val canvasOutsideColor = if (useDarkTheme) Color(0xFF080D18) else CanvasOutsideColor
+    val paperColor = if (useDarkTheme) Color(0xFF101827) else Color.White
+    val paperBorderColor = if (useDarkTheme) Color(0xFF334155) else PaperBorderColor
 
     Box(
         modifier = modifier

@@ -32,5 +32,5 @@ data class AppSettings(
     val canvasMinZoom: Float = 0.5f,
     val canvasMaxZoom: Float = 5f,
     val inkDarkness: Float = 0.6f,
-    val useDarkTheme: Boolean = false
+    val useDarkTheme: Boolean = true
 )

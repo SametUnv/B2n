@@ -58,7 +58,7 @@ class SettingsRepository(private val context: Context) {
             canvasMinZoom = prefs[Keys.canvasMinZoom] ?: 0.5f,
             canvasMaxZoom = prefs[Keys.canvasMaxZoom] ?: 5f,
             inkDarkness = prefs[Keys.inkDarkness] ?: 0.6f,
-            useDarkTheme = prefs[Keys.useDarkTheme] ?: false
+            useDarkTheme = prefs[Keys.useDarkTheme] ?: true
         )
     }
 

@@ -25,24 +25,39 @@ private val Board2NotesLightColors: ColorScheme = lightColorScheme(
 )
 
 private val Board2NotesDarkColors: ColorScheme = darkColorScheme(
-    primary = Color(0xFF3B82F6),
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF1E3A8A),
-    onPrimaryContainer = Color(0xFFEFF6FF),
-    secondary = Color(0xFFF8FAFC),
-    onSecondary = Color(0xFF0F172A),
-    tertiary = Color(0xFF94A3B8),
-    background = Color(0xFF0F172A), // Premium dark navy black
-    onBackground = Color(0xFFF8FAFC),
-    surface = Color(0xFF1E293B), // Premium dark slate gray surface
-    onSurface = Color(0xFFF8FAFC),
-    surfaceVariant = Color(0xFF334155),
-    onSurfaceVariant = Color(0xFF94A3B8),
-    error = Color(0xFFF87171)
+    primary = Color(0xFF60A5FA),
+    onPrimary = Color(0xFF071A34),
+    primaryContainer = Color(0xFF17325C),
+    onPrimaryContainer = Color(0xFFDBEAFE),
+    secondary = Color(0xFFA5B4FC),
+    onSecondary = Color(0xFF172033),
+    secondaryContainer = Color(0xFF29305A),
+    onSecondaryContainer = Color(0xFFE0E7FF),
+    tertiary = Color(0xFF5EEAD4),
+    onTertiary = Color(0xFF042F2E),
+    tertiaryContainer = Color(0xFF134E4A),
+    onTertiaryContainer = Color(0xFFCCFBF1),
+    background = Color(0xFF080D18),
+    onBackground = Color(0xFFE5EDF8),
+    surface = Color(0xFF101827),
+    onSurface = Color(0xFFE5EDF8),
+    surfaceVariant = Color(0xFF1A2536),
+    onSurfaceVariant = Color(0xFFA9B7CA),
+    surfaceTint = Color(0xFF60A5FA),
+    inverseSurface = Color(0xFFE5EDF8),
+    inverseOnSurface = Color(0xFF172033),
+    inversePrimary = Color(0xFF2563EB),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6),
+    outline = Color(0xFF718096),
+    outlineVariant = Color(0xFF334155),
+    scrim = Color.Black
 )
 
 @Composable
-fun Board2NotesTheme(useDarkTheme: Boolean = false, content: @Composable () -> Unit) {
+fun Board2NotesTheme(useDarkTheme: Boolean = true, content: @Composable () -> Unit) {
     val colors = if (useDarkTheme) Board2NotesDarkColors else Board2NotesLightColors
     MaterialTheme(
         colorScheme = colors,
