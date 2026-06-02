@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
@@ -58,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -101,7 +103,7 @@ data class CanvasInputSettings(
 )
 
 private enum class SingleAction { DrawPen, Erase, Pan, SelectInteract, None }
-private enum class SelectMode { Move, Resize, Marquee, None }
+private enum class SelectMode { Move, Resize, Crop, Marquee, None }
 private enum class Corner { TL, TR, BL, BR }
 
 private const val PAPER_WIDTH = CanvasPaper.WIDTH
@@ -327,9 +329,25 @@ fun CanvasEditor(
         )
     }
 
-    val canvasOutsideColor = if (useDarkTheme) Color(0xFF080D18) else CanvasOutsideColor
-    val paperColor = if (useDarkTheme) Color(0xFF101827) else Color.White
-    val paperBorderColor = if (useDarkTheme) Color(0xFF334155) else PaperBorderColor
+    fun handleScreenEdges(bounds: Rect): Map<CropEdge, Offset> {
+        val off = controller.viewportOffset; val sc = controller.viewportScale
+        return mapOf(
+            CropEdge.Left to canvasToScreen(Offset(bounds.left, bounds.center.y), off, sc),
+            CropEdge.Top to canvasToScreen(Offset(bounds.center.x, bounds.top), off, sc),
+            CropEdge.Right to canvasToScreen(Offset(bounds.right, bounds.center.y), off, sc),
+            CropEdge.Bottom to canvasToScreen(Offset(bounds.center.x, bounds.bottom), off, sc)
+        )
+    }
+
+    val invertMatrix = remember {
+        androidx.compose.ui.graphics.ColorMatrix(floatArrayOf(
+            -1f,  0f,  0f, 0f, 255f,
+             0f, -1f,  0f, 0f, 255f,
+             0f,  0f, -1f, 0f, 255f,
+             0f,  0f,  0f, 1f,   0f
+        ))
+    }
+    val invertFilter = remember(invertMatrix) { androidx.compose.ui.graphics.ColorFilter.colorMatrix(invertMatrix) }
 
     Box(
         modifier = modifier
@@ -355,6 +373,7 @@ fun CanvasEditor(
                         var action = SingleAction.None
                         var selectMode = SelectMode.None
                         var resizeCorner = Corner.BR
+                        var cropEdge = CropEdge.Right
                         var resizeAnchor = Offset.Zero
                         var startBounds: Rect? = null
                         var sessionStarted = false
@@ -389,12 +408,24 @@ fun CanvasEditor(
                                             Corner.BR -> Offset(bounds.left, bounds.top)
                                         }
                                     } else {
-                                        val off = controller.viewportOffset; val sc = controller.viewportScale
-                                        val screenRect = Rect(
-                                            canvasToScreen(Offset(bounds.left, bounds.top), off, sc),
-                                            canvasToScreen(Offset(bounds.right, bounds.bottom), off, sc)
-                                        )
-                                        selectMode = if (screenRect.contains(firstDown.position)) SelectMode.Move else SelectMode.Marquee
+                                        val selectedHasImage = controller.selectedElements().any { it is ImageElement }
+                                        val edgeHit = if (selectedHasImage) {
+                                            handleScreenEdges(bounds).minByOrNull { (firstDown.position - it.value).getDistance() }
+                                        } else {
+                                            null
+                                        }
+                                        if (edgeHit != null && (firstDown.position - edgeHit.value).getDistance() <= 34f) {
+                                            selectMode = SelectMode.Crop
+                                            cropEdge = edgeHit.key
+                                            startBounds = bounds
+                                        } else {
+                                            val off = controller.viewportOffset; val sc = controller.viewportScale
+                                            val screenRect = Rect(
+                                                canvasToScreen(Offset(bounds.left, bounds.top), off, sc),
+                                                canvasToScreen(Offset(bounds.right, bounds.bottom), off, sc)
+                                            )
+                                            selectMode = if (screenRect.contains(firstDown.position)) SelectMode.Move else SelectMode.Marquee
+                                        }
                                     }
                                 } else {
                                     selectMode = SelectMode.Marquee
@@ -419,7 +450,10 @@ fun CanvasEditor(
                                     liveStrokePoints = emptyList(); liveStrokePressures = emptyList()
                                     eraserCursor = null; marqueeRect = null
                                     if (erasing) { controller.endErase(); erasing = false }
-                                    if (sessionStarted) { controller.endTransformSession(); sessionStarted = false }
+                                    if (sessionStarted) {
+                                        if (selectMode == SelectMode.Crop) controller.endCropSession() else controller.endTransformSession()
+                                        sessionStarted = false
+                                    }
                                     prevCentroid = null; prevDist = 0f
                                 }
                                 val p0 = pressed[0].position; val p1 = pressed[1].position
@@ -504,6 +538,20 @@ fun CanvasEditor(
                                                 }
                                             }
                                         }
+                                        SelectMode.Crop -> {
+                                            if (startBounds != null) {
+                                                if (!sessionStarted && totalDrag > 4f) {
+                                                    controller.beginCropSession()
+                                                    sessionStarted = true
+                                                }
+                                                if (sessionStarted) {
+                                                    controller.sessionCropSelectedImages(
+                                                        cropEdge,
+                                                        Offset(canvasPt.x - startCanvas.x, canvasPt.y - startCanvas.y)
+                                                    )
+                                                }
+                                            }
+                                        }
                                         SelectMode.Marquee -> { marqueeRect = normalizedRect(startCanvas, clampPointToPaper(canvasPt)) }
                                         SelectMode.None -> {}
                                     }
@@ -541,6 +589,10 @@ fun CanvasEditor(
                             SingleAction.SelectInteract -> when (selectMode) {
                                 SelectMode.Move, SelectMode.Resize -> {
                                     if (sessionStarted) { controller.endTransformSession(); sessionStarted = false }
+                                    else controller.selectAt(startCanvas)
+                                }
+                                SelectMode.Crop -> {
+                                    if (sessionStarted) { controller.endCropSession(); sessionStarted = false }
                                     else controller.selectAt(startCanvas)
                                 }
                                 SelectMode.Marquee -> {
@@ -602,6 +654,7 @@ fun CanvasEditor(
             if (selBounds != null && controller.tool == CanvasTool.Select) {
                 val tl = canvasToScreen(Offset(selBounds.left, selBounds.top), off, sc)
                 val br = canvasToScreen(Offset(selBounds.right, selBounds.bottom), off, sc)
+                val selectedHasImage = controller.selectedElements().any { it is ImageElement }
                 drawRect(
                     color = primary,
                     topLeft = tl,
@@ -611,6 +664,29 @@ fun CanvasEditor(
                 listOf(tl, Offset(br.x, tl.y), Offset(tl.x, br.y), br).forEach { corner ->
                     drawCircle(Color.White, radius = 13f, center = corner)
                     drawCircle(primary, radius = 13f, center = corner, style = Stroke(width = 3f))
+                }
+                if (selectedHasImage) {
+                    val edgeHandles = listOf(
+                        Offset((tl.x + br.x) / 2f, tl.y),
+                        Offset(br.x, (tl.y + br.y) / 2f),
+                        Offset((tl.x + br.x) / 2f, br.y),
+                        Offset(tl.x, (tl.y + br.y) / 2f)
+                    )
+                    edgeHandles.forEach { handle ->
+                        drawRoundRect(
+                            color = Color.White,
+                            topLeft = Offset(handle.x - 10f, handle.y - 6f),
+                            size = Size(20f, 12f),
+                            cornerRadius = CornerRadius(4f, 4f)
+                        )
+                        drawRoundRect(
+                            color = primary,
+                            topLeft = Offset(handle.x - 10f, handle.y - 6f),
+                            size = Size(20f, 12f),
+                            cornerRadius = CornerRadius(4f, 4f),
+                            style = Stroke(width = 2.4f)
+                        )
+                    }
                 }
             }
         }
@@ -625,16 +701,19 @@ fun CanvasEditor(
             val canRestoreImage = controller.selectedElements().any { it is ImageElement }
             SelectionActionBubble(
                 canRestore = canRestoreImage,
+                canCrop = canRestoreImage,
                 onDelete = { controller.deleteSelection() },
                 onRestore = { controller.restoreSelectedImagesToOriginalPlacement() },
+                onCrop = { controller.tool = CanvasTool.Select },
+                onRotate = { controller.rotateSelectedImages(90f) },
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset {
-                        val bubbleWidth = if (canRestoreImage) 156 else 82
+                        val bubbleWidth = if (canRestoreImage) 244 else 82
                         val x = ((tl.x + br.x) / 2f - bubbleWidth / 2f)
                             .roundToInt()
                             .coerceIn(8, (canvasSize.width - bubbleWidth - 8).coerceAtLeast(8))
-                        val y = (tl.y - 48f)
+                        val y = (tl.y - 70f)
                             .roundToInt()
                             .coerceIn(8, (canvasSize.height - 48).coerceAtLeast(8))
                         IntOffset(x, y)
@@ -827,9 +906,19 @@ private fun DrawScope.drawImageElement(element: ImageElement, bitmap: ImageBitma
         drawRect(Color(0x11000000), topLeft = Offset(element.left, element.top), size = Size(element.width, element.height))
         return
     }
+    val cropLeft = element.cropLeft.coerceIn(0f, 0.95f)
+    val cropTop = element.cropTop.coerceIn(0f, 0.95f)
+    val cropRight = element.cropRight.coerceIn(0f, 0.95f - cropLeft)
+    val cropBottom = element.cropBottom.coerceIn(0f, 0.95f - cropTop)
+    val srcLeft = (bitmap.width * cropLeft).roundToInt().coerceIn(0, (bitmap.width - 1).coerceAtLeast(0))
+    val srcTop = (bitmap.height * cropTop).roundToInt().coerceIn(0, (bitmap.height - 1).coerceAtLeast(0))
+    val srcRight = (bitmap.width * (1f - cropRight)).roundToInt().coerceIn(srcLeft + 1, bitmap.width)
+    val srcBottom = (bitmap.height * (1f - cropBottom)).roundToInt().coerceIn(srcTop + 1, bitmap.height)
     val draw: DrawScope.() -> Unit = {
         drawImage(
             image = bitmap,
+            srcOffset = IntOffset(srcLeft, srcTop),
+            srcSize = IntSize((srcRight - srcLeft).coerceAtLeast(1), (srcBottom - srcTop).coerceAtLeast(1)),
             dstOffset = IntOffset(element.left.roundToInt(), element.top.roundToInt()),
             dstSize = IntSize(element.width.roundToInt().coerceAtLeast(1), element.height.roundToInt().coerceAtLeast(1))
         )
@@ -842,8 +931,11 @@ private fun DrawScope.drawImageElement(element: ImageElement, bitmap: ImageBitma
 @Composable
 private fun SelectionActionBubble(
     canRestore: Boolean,
+    canCrop: Boolean,
     onDelete: () -> Unit,
     onRestore: () -> Unit,
+    onCrop: () -> Unit,
+    onRotate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -880,6 +972,32 @@ private fun SelectionActionBubble(
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            if (canCrop) {
+                Surface(
+                    modifier = Modifier.clickable(onClick = onCrop),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+                ) {
+                    Icon(
+                        Icons.Default.CropFree,
+                        contentDescription = "Kirp",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(8.dp).size(17.dp)
+                    )
+                }
+                Surface(
+                    modifier = Modifier.clickable(onClick = onRotate),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+                ) {
+                    Icon(
+                        Icons.Default.Rotate90DegreesCcw,
+                        contentDescription = "Dondur",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(8.dp).size(17.dp)
                     )
                 }
             }

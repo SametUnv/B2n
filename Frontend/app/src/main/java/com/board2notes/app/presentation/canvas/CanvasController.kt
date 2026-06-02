@@ -11,6 +11,7 @@ import java.util.UUID
 import kotlin.math.max
 
 enum class CanvasTool { Pen, Eraser, Select, Pan }
+enum class CropEdge { Left, Top, Right, Bottom }
 
 /**
  * Canvas editörünün tüm durumunu tutan, recomposition'lar arası yaşayan denetleyici.
@@ -124,6 +125,7 @@ class CanvasController(
     // böylece tekrarlanan çağrılar birikmez. Oturum başlarken bir undo noktası kaydedilir.
 
     private var sessionOriginalPage: CanvasPage? = null
+    private var cropOriginalPage: CanvasPage? = null
 
     fun beginTransformSession() {
         if (selection.isEmpty()) return
@@ -152,6 +154,30 @@ class CanvasController(
     }
 
     val inTransformSession: Boolean get() = sessionOriginalPage != null
+
+    fun beginCropSession() {
+        val hasSelectedImage = currentPage().any { it is ImageElement && it.id in selection }
+        if (!hasSelectedImage) return
+        pushUndo()
+        cropOriginalPage = currentPage()
+    }
+
+    fun sessionCropSelectedImages(edge: CropEdge, delta: Offset) {
+        val original = cropOriginalPage ?: return
+        replaceCurrentPageNoUndo(original.map { element ->
+            if (element is ImageElement && element.id in selection) {
+                cropImageElement(element, edge, delta)
+            } else {
+                element
+            }
+        })
+    }
+
+    fun endCropSession() {
+        if (cropOriginalPage == null) return
+        cropOriginalPage = null
+        onChange(pages)
+    }
 
     // --- Silgi oturumu (tek undo adımı, canlı silme) ---
 
@@ -257,8 +283,31 @@ class CanvasController(
                     top = element.initialTop,
                     width = element.initialWidth,
                     height = element.initialHeight,
-                    rotation = 0f
+                    rotation = 0f,
+                    cropLeft = 0f,
+                    cropTop = 0f,
+                    cropRight = 0f,
+                    cropBottom = 0f
                 )
+            } else {
+                element
+            }
+        })
+        selection = selectedImageIds
+    }
+
+    fun rotateSelectedImages(degrees: Float = 90f) {
+        if (selection.isEmpty()) return
+        val selectedImageIds = currentPage()
+            .filterIsInstance<ImageElement>()
+            .filter { it.id in selection }
+            .map { it.id }
+            .toSet()
+        if (selectedImageIds.isEmpty()) return
+        replaceCurrentPage(currentPage().map { element ->
+            if (element is ImageElement && element.id in selectedImageIds) {
+                val rotation = (element.rotation + degrees) % 360f
+                element.copy(rotation = if (rotation < 0f) rotation + 360f else rotation)
             } else {
                 element
             }
@@ -294,6 +343,8 @@ class CanvasController(
 
     companion object {
         private const val MAX_HISTORY = 60
+        private const val MIN_IMAGE_SIZE = 32f
+        private const val MAX_CROP_TOTAL = 0.96f
 
         fun translateElement(element: CanvasElement, delta: Offset): CanvasElement = when (element) {
             is StrokeElement -> element.copy(points = element.points.map { Offset(it.x + delta.x, it.y + delta.y) })
@@ -316,6 +367,62 @@ class CanvasController(
                         top = newTop,
                         width = max(8f, element.width * sx),
                         height = max(8f, element.height * sy)
+                    )
+                }
+            }
+        }
+
+        private fun cropImageElement(element: ImageElement, edge: CropEdge, delta: Offset): ImageElement {
+            val cropLeft = element.cropLeft.coerceIn(0f, MAX_CROP_TOTAL)
+            val cropRight = element.cropRight.coerceIn(0f, MAX_CROP_TOTAL - cropLeft)
+            val cropTop = element.cropTop.coerceIn(0f, MAX_CROP_TOTAL)
+            val cropBottom = element.cropBottom.coerceIn(0f, MAX_CROP_TOTAL - cropTop)
+            val visibleX = (1f - cropLeft - cropRight).coerceAtLeast(0.04f)
+            val visibleY = (1f - cropTop - cropBottom).coerceAtLeast(0.04f)
+            val sourceDisplayWidth = element.width / visibleX
+            val sourceDisplayHeight = element.height / visibleY
+
+            return when (edge) {
+                CropEdge.Left -> {
+                    val dx = delta.x.coerceIn(-cropLeft * sourceDisplayWidth, element.width - MIN_IMAGE_SIZE)
+                    element.copy(
+                        left = element.left + dx,
+                        width = (element.width - dx).coerceAtLeast(MIN_IMAGE_SIZE),
+                        cropLeft = (cropLeft + dx / sourceDisplayWidth).coerceIn(0f, MAX_CROP_TOTAL - cropRight),
+                        cropRight = cropRight,
+                        cropTop = cropTop,
+                        cropBottom = cropBottom
+                    )
+                }
+                CropEdge.Right -> {
+                    val dx = delta.x.coerceIn(-(element.width - MIN_IMAGE_SIZE), cropRight * sourceDisplayWidth)
+                    element.copy(
+                        width = (element.width + dx).coerceAtLeast(MIN_IMAGE_SIZE),
+                        cropLeft = cropLeft,
+                        cropRight = (cropRight - dx / sourceDisplayWidth).coerceIn(0f, MAX_CROP_TOTAL - cropLeft),
+                        cropTop = cropTop,
+                        cropBottom = cropBottom
+                    )
+                }
+                CropEdge.Top -> {
+                    val dy = delta.y.coerceIn(-cropTop * sourceDisplayHeight, element.height - MIN_IMAGE_SIZE)
+                    element.copy(
+                        top = element.top + dy,
+                        height = (element.height - dy).coerceAtLeast(MIN_IMAGE_SIZE),
+                        cropLeft = cropLeft,
+                        cropRight = cropRight,
+                        cropTop = (cropTop + dy / sourceDisplayHeight).coerceIn(0f, MAX_CROP_TOTAL - cropBottom),
+                        cropBottom = cropBottom
+                    )
+                }
+                CropEdge.Bottom -> {
+                    val dy = delta.y.coerceIn(-(element.height - MIN_IMAGE_SIZE), cropBottom * sourceDisplayHeight)
+                    element.copy(
+                        height = (element.height + dy).coerceAtLeast(MIN_IMAGE_SIZE),
+                        cropLeft = cropLeft,
+                        cropRight = cropRight,
+                        cropTop = cropTop,
+                        cropBottom = (cropBottom - dy / sourceDisplayHeight).coerceIn(0f, MAX_CROP_TOTAL - cropTop)
                     )
                 }
             }
