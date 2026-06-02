@@ -371,13 +371,12 @@ class Board2NotesViewModel(
             return
         }
         val job = viewModelScope.launch {
-            busy(PipelineState.RunningOcr, AppScreen.ImageReview)
+            busy(PipelineState.RunningOcr, AppScreen.Enhancement)
             val progressStartedAt = System.currentTimeMillis()
             val progressJob = launch {
                 val ocrStep = if (noteType == NoteType.Text) "OCR metni çıkarılıyor." else "Beyaz sayfa çıktısı hazırlanıyor."
                 val steps = listOf(
-                    "Tahta görüntüsü işleniyor.",
-                    "Tahta alanı bulunuyor.",
+                    "Onaylanan tahta alanı hazırlanıyor.",
                     "Model 2 görüntüyü iyileştiriyor.",
                     ocrStep
                 )
@@ -385,10 +384,9 @@ class Board2NotesViewModel(
                     _uiState.value = _uiState.value.copy(
                         loadingMessage = message,
                         screen = when (index) {
-                            1 -> AppScreen.BoardDetection
-                            2 -> AppScreen.Enhancement
-                            3 -> AppScreen.Ocr
-                            else -> AppScreen.ImageReview
+                            0 -> AppScreen.BoardDetection
+                            1 -> AppScreen.Enhancement
+                            else -> AppScreen.Ocr
                         }
                     )
                     delay(850)
@@ -396,12 +394,22 @@ class Board2NotesViewModel(
             }
             runCatching {
                 val settings = _uiState.value.settings
-                val result = container.backendClient.runPipeline(
-                    bitmap = image,
-                    baseUrl = settings.backendBaseUrl,
-                    threshold = settings.threshold,
-                    runOcr = noteType == NoteType.Text
-                )
+                val approvedQuad = _uiState.value.manualQuad ?: _uiState.value.boardDetection?.quad
+                val result = if (approvedQuad != null) {
+                    container.backendClient.runPipelineFromQuad(
+                        bitmap = image,
+                        quad = approvedQuad,
+                        baseUrl = settings.backendBaseUrl,
+                        runOcr = noteType == NoteType.Text
+                    )
+                } else {
+                    container.backendClient.runPipeline(
+                        bitmap = image,
+                        baseUrl = settings.backendBaseUrl,
+                        threshold = settings.threshold,
+                        runOcr = noteType == NoteType.Text
+                    )
+                }
                 val minimumProgressMs = if (noteType == NoteType.Text) 3000L else 2400L
                 val remainingProgressMs = minimumProgressMs - (System.currentTimeMillis() - progressStartedAt)
                 if (remainingProgressMs > 0) delay(remainingProgressMs)
@@ -425,6 +433,8 @@ class Board2NotesViewModel(
                     pendingScanNoteId = null,
                     pendingScanNoteType = null,
                     pendingScanPageIndex = null,
+                    boardDetection = null,
+                    manualQuad = null,
                     pendingCanvasImageAsset = applied.canvasInsertAsset,
                     pendingCanvasImagePageIndex = applied.canvasInsertAsset?.let { pageIndex },
                     screen = AppScreen.Note,
@@ -447,6 +457,51 @@ class Board2NotesViewModel(
                     loadingMessage = null
                 )
                 fail("Backend pipeline çalıştırılamadı: ${error.message}", error)
+            }
+        }
+        pendingScanJob = job
+        job.invokeOnCompletion {
+            if (pendingScanJob === job) pendingScanJob = null
+        }
+    }
+
+    fun detectBackendBoardForPendingNote(onCompleted: (() -> Unit)? = null) {
+        if (pendingScanJob?.isActive == true) return
+        val image = _uiState.value.selectedImage
+        val noteId = _uiState.value.pendingScanNoteId
+        if (image == null || noteId == null) {
+            _uiState.value = _uiState.value.copy(userMessage = "Köşe tespiti için görsel veya hedef not bulunamadı.")
+            return
+        }
+        if (!_uiState.value.settings.useBackendPipeline) {
+            _uiState.value = _uiState.value.copy(userMessage = "Köşe tespiti için Backend API ayarını açın.")
+            return
+        }
+        val job = viewModelScope.launch {
+            busy(PipelineState.DetectingBoard, AppScreen.BoardDetection)
+            _uiState.value = _uiState.value.copy(loadingMessage = "Model 1 tahta köşelerini tespit ediyor.")
+            runCatching {
+                val settings = _uiState.value.settings
+                container.backendClient.detectBoard(
+                    bitmap = image,
+                    baseUrl = settings.backendBaseUrl,
+                    threshold = settings.threshold
+                )
+            }.onSuccess { result ->
+                _uiState.value = _uiState.value.copy(
+                    boardDetection = result,
+                    manualQuad = result.quad,
+                    screen = AppScreen.BoardDetection,
+                    pipelineState = PipelineState.BoardDetected(result),
+                    isBusy = false,
+                    loadingMessage = null,
+                    userMessage = "Köşeleri kontrol edip gerekirse düzenleyin."
+                )
+                onCompleted?.invoke()
+            }.onFailure { error ->
+                if (error is CancellationException) return@onFailure
+                _uiState.value = _uiState.value.copy(loadingMessage = null)
+                fail("Backend Model 1 tespiti çalıştırılamadı: ${error.message}", error)
             }
         }
         pendingScanJob = job
@@ -790,6 +845,8 @@ class Board2NotesViewModel(
             pendingScanNoteId = null,
             pendingScanNoteType = null,
             pendingScanPageIndex = null,
+            boardDetection = null,
+            manualQuad = null,
             isBusy = false,
             loadingMessage = null
         )

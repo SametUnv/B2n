@@ -2,6 +2,11 @@ package com.board2notes.app.data.backend
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.board2notes.app.domain.model.BoardDetectionResult
+import com.board2notes.app.domain.model.BooleanMask
+import com.board2notes.app.domain.model.PointF2
+import com.board2notes.app.domain.model.Quad
+import com.board2notes.app.domain.model.RectBox
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -25,6 +30,32 @@ data class BackendPipelineResult(
 )
 
 class BackendBoard2NotesClient {
+    suspend fun detectBoard(
+        bitmap: Bitmap,
+        baseUrl: String,
+        threshold: Float
+    ): BoardDetectionResult = withContext(Dispatchers.IO) {
+        val root = normalizeBaseUrl(baseUrl)
+        val started = System.currentTimeMillis()
+        val response = postModel1Detect(root, bitmap, threshold)
+        val artifacts = response.optJSONObject("artifacts") ?: JSONObject()
+        val overlay = fetchBitmap(root, artifacts.optString("overlay")) ?: bitmap
+        val crop = fetchBitmap(root, artifacts.optString("perspective_crop")) ?: bitmap
+        val mask = fetchBitmap(root, artifacts.optString("mask"))
+        BoardDetectionResult(
+            originalImage = bitmap,
+            mask = BooleanMask(1, 1, booleanArrayOf(false)),
+            maskBitmap = mask ?: Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888),
+            overlayBitmap = overlay,
+            cropBitmap = crop,
+            boundingBox = response.optJSONObject("bbox").toRectBox(bitmap.width, bitmap.height),
+            quad = response.optJSONObject("quad").toQuad(bitmap.width, bitmap.height),
+            threshold = threshold,
+            elapsedMs = System.currentTimeMillis() - started,
+            warnings = response.optJSONArray("warnings").toStringList()
+        )
+    }
+
     suspend fun runPipeline(
         bitmap: Bitmap,
         baseUrl: String,
@@ -33,20 +64,18 @@ class BackendBoard2NotesClient {
     ): BackendPipelineResult = withContext(Dispatchers.IO) {
         val root = normalizeBaseUrl(baseUrl)
         val response = postPipeline(root, bitmap, threshold, runOcr)
-        val artifacts = response.optJSONObject("artifacts") ?: JSONObject()
-        val note = response.optJSONObject("note") ?: JSONObject()
-        BackendPipelineResult(
-            jobId = response.optString("job_id"),
-            title = note.optString("title", "B2Note Notu"),
-            body = note.optString("body"),
-            ocrText = response.optString("ocr_text"),
-            whiteCanvasBitmap = fetchBitmap(root, artifacts.optString("white_canvas")),
-            ocrBitmap = fetchBitmap(root, artifacts.optString("ocr_enhanced")),
-            cropBitmap = fetchBitmap(root, artifacts.optString("perspective_crop")),
-            overlayBitmap = fetchBitmap(root, artifacts.optString("overlay")),
-            warnings = response.optJSONArray("warnings").toStringList(),
-            timingsMs = response.optJSONObject("timings_ms").toDoubleMap()
-        )
+        parsePipelineResult(root, response)
+    }
+
+    suspend fun runPipelineFromQuad(
+        bitmap: Bitmap,
+        quad: Quad,
+        baseUrl: String,
+        runOcr: Boolean
+    ): BackendPipelineResult = withContext(Dispatchers.IO) {
+        val root = normalizeBaseUrl(baseUrl)
+        val response = postPipelineFromQuad(root, bitmap, quad, runOcr)
+        parsePipelineResult(root, response)
     }
 
     internal fun normalizeBaseUrl(baseUrl: String): String {
@@ -62,8 +91,34 @@ class BackendBoard2NotesClient {
     }
 
     private fun postPipeline(root: String, bitmap: Bitmap, threshold: Float, runOcr: Boolean): JSONObject {
+        val fields = listOf("threshold" to threshold.toString(), "run_ocr" to runOcr.toString())
+        return postMultipart(root, "/api/v1/pipeline", bitmap, fields)
+    }
+
+    private fun postModel1Detect(root: String, bitmap: Bitmap, threshold: Float): JSONObject {
+        val fields = listOf("threshold" to threshold.toString())
+        return postMultipart(root, "/api/v1/model1/detect", bitmap, fields)
+    }
+
+    private fun postPipelineFromQuad(root: String, bitmap: Bitmap, quad: Quad, runOcr: Boolean): JSONObject {
+        val fields = listOf(
+            "quad" to quad.toBackendJson().toString(),
+            "top_left_x" to quad.topLeft.x.toString(),
+            "top_left_y" to quad.topLeft.y.toString(),
+            "top_right_x" to quad.topRight.x.toString(),
+            "top_right_y" to quad.topRight.y.toString(),
+            "bottom_right_x" to quad.bottomRight.x.toString(),
+            "bottom_right_y" to quad.bottomRight.y.toString(),
+            "bottom_left_x" to quad.bottomLeft.x.toString(),
+            "bottom_left_y" to quad.bottomLeft.y.toString(),
+            "run_ocr" to runOcr.toString()
+        )
+        return postMultipart(root, "/api/v1/pipeline/from-quad", bitmap, fields)
+    }
+
+    private fun postMultipart(root: String, path: String, bitmap: Bitmap, fields: List<Pair<String, String>>): JSONObject {
         val boundary = "B2N-${UUID.randomUUID()}"
-        val connection = (URL("$root/api/v1/pipeline").openConnection() as HttpURLConnection).apply {
+        val connection = (URL("$root$path").openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 10_000
             readTimeout = 180_000
@@ -80,8 +135,7 @@ class BackendBoard2NotesClient {
                 write(value)
                 write("\r\n")
             }
-            field("threshold", threshold.toString())
-            field("run_ocr", runOcr.toString())
+            fields.forEach { (name, value) -> field(name, value) }
             write("--$boundary\r\n")
             write("Content-Disposition: form-data; name=\"image\"; filename=\"board.jpg\"\r\n")
             write("Content-Type: image/jpeg\r\n\r\n")
@@ -100,6 +154,23 @@ class BackendBoard2NotesClient {
             throw IllegalStateException("Backend pipeline HTTP $status: $body")
         }
         return JSONObject(body)
+    }
+
+    private fun parsePipelineResult(root: String, response: JSONObject): BackendPipelineResult {
+        val artifacts = response.optJSONObject("artifacts") ?: JSONObject()
+        val note = response.optJSONObject("note") ?: JSONObject()
+        return BackendPipelineResult(
+            jobId = response.optString("job_id"),
+            title = note.optString("title", "B2Note Notu"),
+            body = note.optString("body"),
+            ocrText = response.optString("ocr_text"),
+            whiteCanvasBitmap = fetchBitmap(root, artifacts.optString("white_canvas")),
+            ocrBitmap = fetchBitmap(root, artifacts.optString("ocr_enhanced")),
+            cropBitmap = fetchBitmap(root, artifacts.optString("perspective_crop")),
+            overlayBitmap = fetchBitmap(root, artifacts.optString("overlay")),
+            warnings = response.optJSONArray("warnings").toStringList(),
+            timingsMs = response.optJSONObject("timings_ms").toDoubleMap()
+        )
     }
 
     private fun fetchBitmap(root: String, path: String): Bitmap? {
@@ -121,6 +192,44 @@ class BackendBoard2NotesClient {
         val output = ByteArrayOutputStream()
         compress(Bitmap.CompressFormat.JPEG, 94, output)
         return output.toByteArray()
+    }
+
+    private fun Quad.toBackendJson(): JSONObject = JSONObject().apply {
+        put("top_left", topLeft.toBackendJson())
+        put("top_right", topRight.toBackendJson())
+        put("bottom_right", bottomRight.toBackendJson())
+        put("bottom_left", bottomLeft.toBackendJson())
+    }
+
+    private fun PointF2.toBackendJson(): JSONObject = JSONObject().apply {
+        put("x", x.toDouble())
+        put("y", y.toDouble())
+    }
+
+    private fun JSONObject?.toRectBox(maxWidth: Int, maxHeight: Int): RectBox {
+        if (this == null) return RectBox(0, 0, maxWidth, maxHeight)
+        return RectBox(
+            left = optInt("left", 0).coerceIn(0, maxWidth),
+            top = optInt("top", 0).coerceIn(0, maxHeight),
+            right = optInt("right", maxWidth).coerceIn(0, maxWidth),
+            bottom = optInt("bottom", maxHeight).coerceIn(0, maxHeight)
+        )
+    }
+
+    private fun JSONObject?.toQuad(maxWidth: Int, maxHeight: Int): Quad {
+        fun point(name: String, fallbackX: Float, fallbackY: Float): PointF2 {
+            val obj = this?.optJSONObject(name)
+            return PointF2(
+                x = obj?.optDouble("x", fallbackX.toDouble())?.toFloat()?.coerceIn(0f, maxWidth.toFloat()) ?: fallbackX,
+                y = obj?.optDouble("y", fallbackY.toDouble())?.toFloat()?.coerceIn(0f, maxHeight.toFloat()) ?: fallbackY
+            )
+        }
+        return Quad(
+            topLeft = point("top_left", 0f, 0f),
+            topRight = point("top_right", maxWidth.toFloat(), 0f),
+            bottomRight = point("bottom_right", maxWidth.toFloat(), maxHeight.toFloat()),
+            bottomLeft = point("bottom_left", 0f, maxHeight.toFloat())
+        )
     }
 
     private fun JSONArray?.toStringList(): List<String> {

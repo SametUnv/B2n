@@ -727,7 +727,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
     val topLevel = route in setOf(Route.Home, Route.Notes, Route.Settings)
 
-    BackHandler(enabled = state.pendingScanNoteId != null && route in setOf(Route.Capture, Route.Review)) {
+    BackHandler(enabled = state.pendingScanNoteId != null && route in setOf(Route.Capture, Route.Review, Route.Crop)) {
         viewModel.cancelPendingScan()
         navController.popBackStack()
     }
@@ -1703,11 +1703,11 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
                             if (state.pendingScanNoteId != null) {
 
-                                viewModel.runBackendPipelineForPendingNote {
+                                viewModel.detectBackendBoardForPendingNote {
 
-                                    navController.navigate(Route.NoteEditor) {
+                                    navController.navigate(Route.Crop) {
 
-                                        popUpTo(Route.Capture) { inclusive = true }
+                                        popUpTo(Route.Review) { inclusive = true }
 
                                     }
 
@@ -1737,15 +1737,39 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
                         onContinue = {
 
-                            viewModel.enhanceBoard()
+                            if (state.pendingScanNoteId != null) {
 
-                            navController.navigate(Route.Enhancement)
+                                viewModel.runBackendPipelineForPendingNote {
+
+                                    navController.navigate(Route.NoteEditor) {
+
+                                        popUpTo(Route.Capture) { inclusive = true }
+
+                                    }
+
+                                }
+
+                            } else {
+
+                                viewModel.enhanceBoard()
+
+                                navController.navigate(Route.Enhancement)
+
+                            }
 
                         },
 
                         onSkipToNote = {
 
-                            viewModel.skipToNoteEditor()
+                            if (state.pendingScanNoteId != null) {
+
+                                viewModel.cancelPendingScan()
+
+                            } else {
+
+                                viewModel.skipToNoteEditor()
+
+                            }
 
                             navController.navigate(Route.NoteEditor)
 
@@ -2066,6 +2090,7 @@ private fun Board2NoteNavigationDrawer(
     onDestinationClick: (NavigationDestination) -> Unit
 
 ) {
+    val appbarLogo = board2NoteAppbarLogoRes()
 
     ModalDrawerSheet(
 
@@ -2119,7 +2144,7 @@ private fun Board2NoteNavigationDrawer(
 
                 Image(
 
-                    painter = androidx.compose.ui.res.painterResource(id = com.board2notes.app.R.drawable.b2n_appbar),
+                    painter = painterResource(id = appbarLogo),
 
                     contentDescription = "B2N Logo",
 
@@ -2671,6 +2696,15 @@ private fun darkAwareColor(lightColor: Color, darkColor: Color): Color {
 }
 
 @Composable
+private fun board2NoteAppbarLogoRes(): Int {
+    return board2NoteAppbarLogoRes(MaterialTheme.colorScheme.background.red < 0.2f)
+}
+
+private fun board2NoteAppbarLogoRes(isDark: Boolean): Int {
+    return if (isDark) R.drawable.b2n_appbar_beyaz else R.drawable.b2n_appbar
+}
+
+@Composable
 private fun NoteTypeChoiceRow(
 
     title: String,
@@ -2768,6 +2802,7 @@ private fun BoardLoadingOverlay(message: String) {
 
 
     val isDark = MaterialTheme.colorScheme.background.red < 0.2f
+    val appbarLogo = board2NoteAppbarLogoRes(isDark)
     val loadingTrackColor = if (isDark) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f) else Color(0xFFE5E7EB)
     val loadingProgressColor = if (isDark) MaterialTheme.colorScheme.primary else Color(0xFF2563EB)
 
@@ -2815,7 +2850,7 @@ private fun BoardLoadingOverlay(message: String) {
 
                 Image(
 
-                    painter = androidx.compose.ui.res.painterResource(id = com.board2notes.app.R.drawable.b2n_appbar),
+                    painter = painterResource(id = appbarLogo),
 
                     contentDescription = "Board2Note",
 
@@ -6655,6 +6690,17 @@ private fun BoardCropScreen(
 ) {
 
     val detection = state.boardDetection
+    val addingToNote = state.pendingScanNoteId != null
+
+    if (addingToNote) {
+        PendingBoardCropScreen(
+            state = state,
+            viewModel = viewModel,
+            onRetry = { viewModel.detectBackendBoardForPendingNote() },
+            onContinue = onContinue
+        )
+        return
+    }
 
     Column(
 
@@ -6747,6 +6793,223 @@ private fun BoardCropScreen(
             ManualCornerEditor(state, viewModel)
 
             Spacer(Modifier.height(18.dp))
+
+        }
+
+    }
+
+}
+
+
+@Composable
+
+private fun PendingBoardCropScreen(
+
+    state: Board2NotesUiState,
+
+    viewModel: Board2NotesViewModel,
+
+    onRetry: () -> Unit,
+
+    onContinue: () -> Unit
+
+) {
+
+    val detection = state.boardDetection
+
+    Column(
+
+        modifier = Modifier
+
+            .fillMaxSize()
+
+            .background(darkAwareColor(Color.White, MaterialTheme.colorScheme.background))
+
+    ) {
+
+        Column(
+
+            modifier = Modifier
+
+                .weight(1f)
+
+                .padding(horizontal = 18.dp)
+
+        ) {
+
+            Spacer(Modifier.height(14.dp))
+
+            Text(
+
+                "Tahta köşelerini kontrol et",
+
+                style = MaterialTheme.typography.titleLarge,
+
+                fontWeight = FontWeight.SemiBold,
+
+                color = MaterialTheme.colorScheme.onSurface
+
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+
+                "Köşe noktalarını gerekiyorsa sürükle. Sonraki adımda çıktı doğrudan notuna eklenecek.",
+
+                style = MaterialTheme.typography.bodyMedium,
+
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            detection?.warnings?.filterNot(::isManualCropAppliedWarning)?.firstOrNull()?.let {
+
+                WarningText(it)
+
+                Spacer(Modifier.height(10.dp))
+
+            }
+
+            Surface(
+
+                modifier = Modifier
+
+                    .fillMaxWidth()
+
+                    .weight(1f),
+
+                shape = RoundedCornerShape(22.dp),
+
+                color = darkAwareColor(Color(0xFFF8FAFC), MaterialTheme.colorScheme.surfaceVariant),
+
+                border = BorderStroke(1.dp, darkAwareColor(Color(0xFFE2E8F0), MaterialTheme.colorScheme.outlineVariant))
+
+            ) {
+
+                Box(
+
+                    modifier = Modifier
+
+                        .fillMaxSize()
+
+                        .padding(10.dp),
+
+                    contentAlignment = Alignment.Center
+
+                ) {
+
+                    if (detection != null) {
+
+                        ImageWithQuad(
+
+                            bitmap = detection.overlayBitmap,
+
+                            quad = state.manualQuad,
+
+                            onCornerDrag = viewModel::updateManualCorner,
+
+                            modifier = Modifier.fillMaxWidth()
+
+                        )
+
+                    } else {
+
+                        StatusBanner("Köşeler hazırlanıyor...", busy = true)
+
+                    }
+
+                }
+
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            Text(
+
+                "İpucu: Mavi noktaları yalnızca tahta yüzeyinin gerçek köşelerine taşı.",
+
+                style = MaterialTheme.typography.bodySmall,
+
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+        }
+
+        Surface(
+
+            modifier = Modifier.fillMaxWidth(),
+
+            color = MaterialTheme.colorScheme.surface,
+
+            shadowElevation = 8.dp,
+
+            tonalElevation = 0.dp
+
+        ) {
+
+            Row(
+
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
+
+            ) {
+
+                OutlinedButton(
+
+                    onClick = onRetry,
+
+                    modifier = Modifier
+
+                        .weight(1f)
+
+                        .height(50.dp),
+
+                    enabled = !state.isBusy && state.selectedImage != null,
+
+                    shape = RoundedCornerShape(16.dp)
+
+                ) {
+
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+
+                    Spacer(Modifier.width(8.dp))
+
+                    Text("Tekrar bul")
+
+                }
+
+                Button(
+
+                    onClick = onContinue,
+
+                    modifier = Modifier
+
+                        .weight(1.25f)
+
+                        .height(50.dp),
+
+                    enabled = !state.isBusy && detection != null && state.manualQuad != null,
+
+                    shape = RoundedCornerShape(16.dp)
+
+                ) {
+
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+
+                    Spacer(Modifier.width(8.dp))
+
+                    Text("Sonraki adıma geç", fontWeight = FontWeight.SemiBold)
+
+                }
+
+            }
 
         }
 
@@ -10612,7 +10875,7 @@ private fun AboutScreen() {
 
             Image(
 
-                painter = painterResource(id = com.board2notes.app.R.drawable.b2n_appbar),
+                painter = painterResource(id = board2NoteAppbarLogoRes()),
 
                 contentDescription = "B2N Logo",
 
@@ -10884,7 +11147,7 @@ private fun HeaderLogoMark(modifier: Modifier = Modifier) {
 
     Image(
 
-        painter = painterResource(id = R.drawable.b2n_appbar),
+        painter = painterResource(id = board2NoteAppbarLogoRes()),
 
         contentDescription = "Board2Note",
 

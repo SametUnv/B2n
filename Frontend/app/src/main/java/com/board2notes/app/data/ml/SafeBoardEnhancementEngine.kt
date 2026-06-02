@@ -15,7 +15,7 @@ class SafeBoardEnhancementEngine(
         } catch (error: Throwable) {
             val fallbackResult = fallback.enhance(bitmap, mode)
             fallbackResult.copy(
-                warnings = fallbackResult.warnings + "Model 2 ONNX hatası: ${error.message ?: error::class.java.simpleName}"
+                warnings = fallbackResult.warnings + "Backend iyilestirme hatasi: ${error.message ?: error::class.java.simpleName}"
             )
         }
 }

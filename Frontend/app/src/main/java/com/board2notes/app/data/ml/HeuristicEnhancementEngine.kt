@@ -26,7 +26,7 @@ class HeuristicEnhancementEngine : BoardEnhancementEngine {
                     textLayerBitmap = textLayer,
                     mode = mode,
                     elapsedMs = 0L,
-                    warnings = listOf("Model 2 ONNX/TFLite export hazır değil. Geçici kontrast ve eşik tabanlı iyileştirme kullanılıyor."),
+                    warnings = listOf("Backend iyileştirme servisi kullanılamadı. Geçici kontrast ve eşik tabanlı iyileştirme uygulanıyor."),
                     debugArtifacts = listOf(
                         DebugArtifact("enhancement_input", bitmap),
                         DebugArtifact("enhancement_contrast", enhanced),

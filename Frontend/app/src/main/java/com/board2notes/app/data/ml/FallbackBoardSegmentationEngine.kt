@@ -43,7 +43,7 @@ class FallbackBoardSegmentationEngine : BoardSegmentationEngine {
             ),
             threshold = threshold,
             elapsedMs = 0L,
-            warnings = listOf("ONNX modeli çalıştırılamadı. Akışı test edebilmek için geçici orta kırpma kullanıldı."),
+            warnings = listOf("Backend tahta tespiti kullanılamadı. Geçici orta kırpma uygulandı."),
             debugArtifacts = listOf(
                 DebugArtifact("fallback_overlay", overlay),
                 DebugArtifact("fallback_crop", crop)

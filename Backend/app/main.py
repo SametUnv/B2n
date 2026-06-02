@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -12,6 +13,7 @@ from app.config import load_settings, torch_runtime_info
 from app.schemas import BBox, Model1Response, Model2Response, Note, OcrLine, PipelineResponse, Point, Quad
 from app.services.artifacts import ArtifactStore
 from app.services.image_io import read_upload_rgb
+from app.services.geometry import draw_quad, inset_quad, order_points, warp_perspective
 from app.services.model1_segmentation import Model1Result, Model1SegmentationService
 from app.services.model2_enhancement import Model2EnhancementService, Model2Result
 from app.services.notes import FormattedNote, RuleBasedNoteFormatter
@@ -117,6 +119,123 @@ async def enhance_model2(image: UploadFile = File(...)) -> Model2Response:
         artifact_urls = save_model2_artifacts(job_id, job_dir, result)
         artifacts.save_json(job_id, job_dir, "model2_response", {"job_id": job_id, "artifacts": artifact_urls})
         return model2_response(job_id, result, artifact_urls)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/v1/pipeline/from-quad", response_model=PipelineResponse)
+async def pipeline_from_quad(
+    image: UploadFile = File(...),
+    quad: str | None = Form(None),
+    top_left_x: float | None = Form(None),
+    top_left_y: float | None = Form(None),
+    top_right_x: float | None = Form(None),
+    top_right_y: float | None = Form(None),
+    bottom_right_x: float | None = Form(None),
+    bottom_right_y: float | None = Form(None),
+    bottom_left_x: float | None = Form(None),
+    bottom_left_y: float | None = Form(None),
+    run_ocr: bool = Form(True),
+) -> PipelineResponse:
+    started = time.perf_counter()
+    try:
+        image_rgb = await read_upload_rgb(image)
+        approved_quad = parse_quad_form(
+            quad,
+            image_rgb.shape[1],
+            image_rgb.shape[0],
+            field_points=[
+                top_left_x,
+                top_left_y,
+                top_right_x,
+                top_right_y,
+                bottom_right_x,
+                bottom_right_y,
+                bottom_left_x,
+                bottom_left_y,
+            ],
+        )
+        content_quad = inset_quad(approved_quad, settings.board_content_margin_ratio)
+
+        job_id, job_dir = artifacts.create_job()
+        original_url = artifacts.save_image(job_id, job_dir, "original", image_rgb)
+
+        outer_perspective_crop = warp_perspective(
+            image_rgb,
+            approved_quad,
+            max_output_side=settings.perspective_max_output_side,
+        )
+        perspective_crop = warp_perspective(
+            image_rgb,
+            content_quad,
+            max_output_side=settings.perspective_max_output_side,
+        )
+        overlay = draw_quad(image_rgb, approved_quad)
+        m1_artifacts = {
+            "overlay": artifacts.save_image(job_id, job_dir, "model1_overlay", overlay),
+            "outer_perspective_crop": artifacts.save_image(
+                job_id,
+                job_dir,
+                "model1_outer_perspective_crop",
+                outer_perspective_crop,
+            ),
+            "perspective_crop": artifacts.save_image(job_id, job_dir, "model1_perspective_crop", perspective_crop),
+        }
+
+        m2 = model2_service.enhance(perspective_crop)
+        m2_artifacts = save_model2_artifacts(job_id, job_dir, m2)
+
+        if run_ocr:
+            ocr = ocr_service.recognize(m2.ocr_enhanced)
+            note = note_formatter.format(ocr)
+        else:
+            ocr = InternalOcrResult(text="", lines=[], warnings=[], elapsed_ms=0.0)
+            note = FormattedNote(
+                title="OCR kapali",
+                body="OCR bu calistirmada kapaliydi. Model ciktilari ve not canvas uretildi.",
+            )
+        ocr_text_url = artifacts.save_text(job_id, job_dir, "ocr_text", ocr.text)
+        note_url = artifacts.save_text(job_id, job_dir, "note", f"{note.title}\n\n{note.body}")
+
+        warnings = m2.warnings + ocr.warnings
+        timings = {f"model2_{k}": v for k, v in m2.timings_ms.items()}
+        timings["ocr_ms"] = ocr.elapsed_ms
+        timings["total_ms"] = (time.perf_counter() - started) * 1000.0
+
+        model1 = Model1Response(
+            job_id=job_id,
+            bbox=bbox_model(bbox_from_quad(approved_quad)),
+            quad=quad_model(approved_quad),
+            content_quad=quad_model(content_quad),
+            confidence=1.0,
+            strategy="user_approved_quad",
+            warnings=[],
+            timings_ms={"manual_quad_ms": 0.0},
+            artifacts=m1_artifacts,
+        )
+        all_artifacts = {"original": original_url, **m1_artifacts, **m2_artifacts, "ocr_text": ocr_text_url, "note": note_url}
+        response = PipelineResponse(
+            job_id=job_id,
+            model1=model1,
+            model2=model2_response(job_id, m2, m2_artifacts),
+            ocr_text=ocr.text,
+            ocr_lines=[
+                OcrLine(text=line.text, confidence=line.confidence, bbox=bbox_model(line.bbox))
+                for line in ocr.lines
+            ],
+            note=Note(title=note.title, body=note.body),
+            warnings=warnings,
+            timings_ms=timings,
+            artifacts=all_artifacts,
+            metadata={
+                "device": settings.device,
+                "run_ocr": run_ocr,
+                "board_content_margin_ratio": settings.board_content_margin_ratio,
+                "quad_source": "frontend_user_approved",
+            },
+        )
+        artifacts.save_json(job_id, job_dir, "pipeline_from_quad_response", response.model_dump())
+        return response
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -247,6 +366,65 @@ def bbox_model(bbox: tuple[int, int, int, int] | None) -> BBox | None:
         return None
     left, top, right, bottom = bbox
     return BBox(left=left, top=top, right=right, bottom=bottom)
+
+
+def parse_quad_form(
+    raw: str | None,
+    image_width: int,
+    image_height: int,
+    field_points: list[float | None] | None = None,
+) -> np.ndarray:
+    if field_points is not None and all(value is not None for value in field_points):
+        values = [float(value) for value in field_points]
+        points = [
+            [values[0], values[1]],
+            [values[2], values[3]],
+            [values[4], values[5]],
+            [values[6], values[7]],
+        ]
+    else:
+        if raw is None or not raw.strip():
+            raise ValueError("Quad form field is empty.")
+        raw = raw.strip()
+        payload = None
+        candidates = [
+            raw,
+            raw.strip('"'),
+            raw.replace('\\"', '"'),
+            raw.replace("\\\\\"", '"'),
+        ]
+        try:
+            candidates.append(raw.encode("utf-8").decode("unicode_escape"))
+        except Exception:
+            pass
+        last_error: Exception | None = None
+        for candidate in candidates:
+            try:
+                payload = json.loads(candidate)
+                break
+            except json.JSONDecodeError as exc:
+                last_error = exc
+        if payload is None:
+            raise ValueError(f"Invalid quad JSON: {last_error}")
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        if isinstance(payload, dict):
+            keys = ("top_left", "top_right", "bottom_right", "bottom_left")
+            points = [[payload[key]["x"], payload[key]["y"]] for key in keys]
+        else:
+            points = payload
+    quad = np.asarray(points, dtype=np.float32).reshape(4, 2)
+    quad[:, 0] = np.clip(quad[:, 0], 0, max(1, image_width - 1))
+    quad[:, 1] = np.clip(quad[:, 1], 0, max(1, image_height - 1))
+    return order_points(quad)
+
+
+def bbox_from_quad(quad: np.ndarray) -> tuple[int, int, int, int]:
+    left = int(np.floor(float(np.min(quad[:, 0]))))
+    top = int(np.floor(float(np.min(quad[:, 1]))))
+    right = int(np.ceil(float(np.max(quad[:, 0]))))
+    bottom = int(np.ceil(float(np.max(quad[:, 1]))))
+    return left, top, right, bottom
 
 
 def quad_model(quad) -> Quad:

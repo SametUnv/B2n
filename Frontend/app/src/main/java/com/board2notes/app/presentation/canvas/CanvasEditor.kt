@@ -352,7 +352,7 @@ fun CanvasEditor(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(canvasOutsideColor)
+            .background(CanvasOutsideColor)
             .onSizeChanged { canvasSize = it }
     ) {
         Canvas(
@@ -609,9 +609,9 @@ fun CanvasEditor(
         ) {
             val off = controller.viewportOffset
             val sc = controller.viewportScale
-            drawRect(canvasOutsideColor, size = size)
+            drawRect(CanvasOutsideColor, size = size)
             withTransform({ translate(off.x, off.y); scale(sc, sc, pivot = Offset.Zero) }) {
-                drawRect(paperColor, topLeft = Offset.Zero, size = PaperSize)
+                drawRect(Color.White, topLeft = Offset.Zero, size = PaperSize)
                 clipRect(left = 0f, top = 0f, right = PAPER_WIDTH, bottom = PAPER_HEIGHT) {
                     background?.let { bg ->
                         drawImage(
@@ -642,7 +642,7 @@ fun CanvasEditor(
                     }
                 }
                 drawRect(
-                    color = paperBorderColor,
+                    color = PaperBorderColor,
                     topLeft = Offset.Zero,
                     size = PaperSize,
                     style = Stroke(width = 1.25f / sc)
