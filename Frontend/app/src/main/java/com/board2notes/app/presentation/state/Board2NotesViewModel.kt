@@ -23,7 +23,9 @@ import com.board2notes.app.domain.model.PointF2
 import com.board2notes.app.domain.model.Quad
 import com.board2notes.app.domain.model.SavedNote
 import com.board2notes.app.domain.pipeline.PipelineState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +43,7 @@ class Board2NotesViewModel(
 ) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow(Board2NotesUiState())
     val uiState: StateFlow<Board2NotesUiState> = _uiState.asStateFlow()
+    private var pendingScanJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -322,6 +325,7 @@ class Board2NotesViewModel(
                     archivedNotes = loadArchivedNotesSafely(),
                     pendingScanNoteId = null,
                     pendingScanNoteType = null,
+                    pendingScanPageIndex = null,
                     screen = AppScreen.Note,
                     isBusy = false,
                     userMessage = if (noteType == NoteType.Canvas) "Canvas notu oluşturuldu." else "Yazı notu oluşturuldu."
@@ -334,6 +338,8 @@ class Board2NotesViewModel(
     }
 
     fun startScanForCurrentNote(pageIndex: Int = 0) {
+        pendingScanJob?.cancel()
+        pendingScanJob = null
         val selected = _uiState.value.selectedSavedNote
         val id = selected?.id ?: _uiState.value.activeSavedNoteId
         if (id == null) {
@@ -351,9 +357,11 @@ class Board2NotesViewModel(
     }
 
     fun runBackendPipelineForPendingNote(onCompleted: (() -> Unit)? = null) {
+        if (pendingScanJob?.isActive == true) return
         val image = _uiState.value.selectedImage
         val noteId = _uiState.value.pendingScanNoteId
         val noteType = _uiState.value.pendingScanNoteType ?: _uiState.value.selectedSavedNote?.noteType ?: NoteType.Text
+        val pageIndex = _uiState.value.pendingScanPageIndex ?: 0
         if (image == null || noteId == null) {
             _uiState.value = _uiState.value.copy(userMessage = "İşlenecek görsel veya hedef not bulunamadı.")
             return
@@ -362,7 +370,7 @@ class Board2NotesViewModel(
             _uiState.value = _uiState.value.copy(userMessage = "Not içine tarama için Backend API ayarını açın.")
             return
         }
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             busy(PipelineState.RunningOcr, AppScreen.ImageReview)
             val progressStartedAt = System.currentTimeMillis()
             val progressJob = launch {
@@ -394,11 +402,11 @@ class Board2NotesViewModel(
                     threshold = settings.threshold,
                     runOcr = noteType == NoteType.Text
                 )
-                applyBackendResultToNote(noteId, noteType, result)
-            }.onSuccess { applied ->
                 val minimumProgressMs = if (noteType == NoteType.Text) 3000L else 2400L
                 val remainingProgressMs = minimumProgressMs - (System.currentTimeMillis() - progressStartedAt)
                 if (remainingProgressMs > 0) delay(remainingProgressMs)
+                applyBackendResultToNote(noteId, noteType, result)
+            }.onSuccess { applied ->
                 progressJob.cancel()
                 val saved = applied.note
                 _uiState.value = _uiState.value.copy(
@@ -416,7 +424,9 @@ class Board2NotesViewModel(
                     ),
                     pendingScanNoteId = null,
                     pendingScanNoteType = null,
+                    pendingScanPageIndex = null,
                     pendingCanvasImageAsset = applied.canvasInsertAsset,
+                    pendingCanvasImagePageIndex = applied.canvasInsertAsset?.let { pageIndex },
                     screen = AppScreen.Note,
                     isBusy = false,
                     loadingMessage = null,
@@ -429,9 +439,19 @@ class Board2NotesViewModel(
                 onCompleted?.invoke()
             }.onFailure { error ->
                 progressJob.cancel()
-                _uiState.value = _uiState.value.copy(loadingMessage = null)
+                if (error is CancellationException) return@onFailure
+                _uiState.value = _uiState.value.copy(
+                    pendingScanNoteId = null,
+                    pendingScanNoteType = null,
+                    pendingScanPageIndex = null,
+                    loadingMessage = null
+                )
                 fail("Backend pipeline çalıştırılamadı: ${error.message}", error)
             }
+        }
+        pendingScanJob = job
+        job.invokeOnCompletion {
+            if (pendingScanJob === job) pendingScanJob = null
         }
     }
 
@@ -442,7 +462,11 @@ class Board2NotesViewModel(
         )
     }
 
-    fun saveCurrentNote(onSaved: (() -> Unit)? = null, showMessage: Boolean = true) {
+    fun saveCurrentNote(
+        onSaved: (() -> Unit)? = null,
+        showMessage: Boolean = true,
+        onFailed: (() -> Unit)? = null
+    ) {
         val note = _uiState.value.note ?: return
         val id = _uiState.value.activeSavedNoteId ?: return
         viewModelScope.launch {
@@ -454,14 +478,13 @@ class Board2NotesViewModel(
                     courseName = note.courseName
                 )
             }.onSuccess { saved ->
-                _uiState.value = _uiState.value.copy(
+                _uiState.value = withRefreshedNotes(_uiState.value.copy(
                     selectedSavedNote = saved,
-                    savedNotes = loadNotesSafely(),
-                    archivedNotes = loadArchivedNotesSafely(),
                     userMessage = if (showMessage) "Not kaydedildi." else _uiState.value.userMessage
-                )
+                ))
                 onSaved?.invoke()
             }.onFailure { error ->
+                onFailed?.invoke()
                 fail("Not kaydedilemedi: ${error.message}", error)
             }
         }
@@ -473,12 +496,7 @@ class Board2NotesViewModel(
 
     fun refreshNotes() {
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                savedNotes = loadNotesSafely(),
-                archivedNotes = loadArchivedNotesSafely(),
-                deletedNotes = loadDeletedNotesSafely(),
-                favoriteNotes = loadFavoriteNotesSafely()
-            )
+            _uiState.value = withRefreshedNotes()
         }
     }
 
@@ -504,15 +522,13 @@ class Board2NotesViewModel(
             runCatching {
                 container.noteRepository.deleteNote(id)
             }.onSuccess {
-                _uiState.value = _uiState.value.copy(
+                _uiState.value = withRefreshedNotes(_uiState.value.copy(
                     selectedSavedNote = null,
                     activeSavedNoteId = null,
                     note = null,
-                    savedNotes = loadNotesSafely(),
-                    archivedNotes = loadArchivedNotesSafely(),
                     screen = AppScreen.Notes,
                     userMessage = "Not silindi."
-                )
+                ))
             }.onFailure { error ->
                 fail("Not silinemedi: ${error.message}", error)
             }
@@ -525,11 +541,9 @@ class Board2NotesViewModel(
             runCatching {
                 ids.forEach { id -> container.noteRepository.deleteNote(id) }
             }.onSuccess {
-                _uiState.value = _uiState.value.copy(
-                    savedNotes = loadNotesSafely(),
-                    archivedNotes = loadArchivedNotesSafely(),
+                _uiState.value = withRefreshedNotes(_uiState.value.copy(
                     userMessage = "${ids.size} not silindi."
-                )
+                ))
             }.onFailure { error ->
                 fail("Notlar silinemedi: ${error.message}", error)
             }
@@ -541,11 +555,9 @@ class Board2NotesViewModel(
             runCatching {
                 container.noteRepository.deleteNote(id)
             }.onSuccess {
-                _uiState.value = _uiState.value.copy(
-                    savedNotes = loadNotesSafely(),
-                    archivedNotes = loadArchivedNotesSafely(),
+                _uiState.value = withRefreshedNotes(_uiState.value.copy(
                     userMessage = "Not silindi."
-                )
+                ))
             }.onFailure { error ->
                 fail("Not silinemedi: ${error.message}", error)
             }
@@ -563,11 +575,9 @@ class Board2NotesViewModel(
                     courseName = courseName
                 )
             }.onSuccess { saved ->
-                _uiState.value = _uiState.value.copy(
-                    savedNotes = loadNotesSafely(),
-                    archivedNotes = loadArchivedNotesSafely(),
+                _uiState.value = withRefreshedNotes(_uiState.value.copy(
                     userMessage = "Not '${courseName.ifBlank { "Genel" }}' dersine taşındı."
-                )
+                ))
             }.onFailure { error ->
                 fail("Not taşınamadı: ${error.message}", error)
             }
@@ -590,11 +600,9 @@ class Board2NotesViewModel(
                         )
                     }
             }.onSuccess {
-                _uiState.value = _uiState.value.copy(
-                    savedNotes = loadNotesSafely(),
-                    archivedNotes = loadArchivedNotesSafely(),
+                _uiState.value = withRefreshedNotes(_uiState.value.copy(
                     userMessage = "$normalized dersi silindi; notlar Genel'e taşındı."
-                )
+                ))
             }.onFailure { error ->
                 fail("Ders silinemedi: ${error.message}", error)
             }
@@ -606,11 +614,9 @@ class Board2NotesViewModel(
             runCatching {
                 container.noteRepository.archiveNote(id)
             }.onSuccess {
-                _uiState.value = _uiState.value.copy(
-                    savedNotes = loadNotesSafely(),
-                    archivedNotes = loadArchivedNotesSafely(),
+                _uiState.value = withRefreshedNotes(_uiState.value.copy(
                     userMessage = "Not arşivlendi."
-                )
+                ))
             }.onFailure { error ->
                 fail("Not arşivlenemedi: ${error.message}", error)
             }
@@ -622,11 +628,9 @@ class Board2NotesViewModel(
             runCatching {
                 container.noteRepository.unarchiveNote(id)
             }.onSuccess {
-                _uiState.value = _uiState.value.copy(
-                    savedNotes = loadNotesSafely(),
-                    archivedNotes = loadArchivedNotesSafely(),
+                _uiState.value = withRefreshedNotes(_uiState.value.copy(
                     userMessage = "Not geri yüklendi."
-                )
+                ))
             }.onFailure { error ->
                 fail("Not geri yüklenemedi: ${error.message}", error)
             }
@@ -771,9 +775,24 @@ class Board2NotesViewModel(
     }
 
     fun clearPendingCanvasImage() {
-        if (_uiState.value.pendingCanvasImageAsset != null) {
-            _uiState.value = _uiState.value.copy(pendingCanvasImageAsset = null)
+        if (_uiState.value.pendingCanvasImageAsset != null || _uiState.value.pendingCanvasImagePageIndex != null) {
+            _uiState.value = _uiState.value.copy(
+                pendingCanvasImageAsset = null,
+                pendingCanvasImagePageIndex = null
+            )
         }
+    }
+
+    fun cancelPendingScan() {
+        pendingScanJob?.cancel()
+        pendingScanJob = null
+        _uiState.value = _uiState.value.copy(
+            pendingScanNoteId = null,
+            pendingScanNoteType = null,
+            pendingScanPageIndex = null,
+            isBusy = false,
+            loadingMessage = null
+        )
     }
 
     fun setInkDarkness(value: Float) {
@@ -792,34 +811,39 @@ class Board2NotesViewModel(
     private suspend fun loadFavoriteNotesSafely(): List<SavedNote> =
         runCatching { container.noteRepository.listFavoriteNotes() }.getOrDefault(emptyList())
 
+    private suspend fun withRefreshedNotes(state: Board2NotesUiState = _uiState.value): Board2NotesUiState =
+        state.copy(
+            savedNotes = loadNotesSafely(),
+            archivedNotes = loadArchivedNotesSafely(),
+            deletedNotes = loadDeletedNotesSafely(),
+            favoriteNotes = loadFavoriteNotesSafely()
+        )
+
     fun toggleFavorite(noteId: String) {
         viewModelScope.launch {
             container.noteRepository.toggleFavorite(noteId)
-            refreshNotes()
+            _uiState.value = withRefreshedNotes()
         }
     }
 
     fun restoreNote(noteId: String) {
         viewModelScope.launch {
             container.noteRepository.restoreNote(noteId)
-            refreshNotes()
-            _uiState.value = _uiState.value.copy(userMessage = "Not geri yüklendi.")
+            _uiState.value = withRefreshedNotes(_uiState.value.copy(userMessage = "Not geri yüklendi."))
         }
     }
 
     fun deleteNotePermanently(noteId: String) {
         viewModelScope.launch {
             container.noteRepository.deleteNotePermanently(noteId)
-            refreshNotes()
-            _uiState.value = _uiState.value.copy(userMessage = "Not kalıcı olarak silindi.")
+            _uiState.value = withRefreshedNotes(_uiState.value.copy(userMessage = "Not kalıcı olarak silindi."))
         }
     }
 
     fun emptyTrash() {
         viewModelScope.launch {
             container.noteRepository.emptyTrash()
-            refreshNotes()
-            _uiState.value = _uiState.value.copy(userMessage = "Çöp kutusu boşaltıldı.")
+            _uiState.value = withRefreshedNotes(_uiState.value.copy(userMessage = "Çöp kutusu boşaltıldı."))
         }
     }
 
