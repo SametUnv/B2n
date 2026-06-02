@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 private data class AppliedResult(val note: SavedNote, val canvasInsertAsset: String?)
@@ -363,6 +364,28 @@ class Board2NotesViewModel(
         }
         viewModelScope.launch {
             busy(PipelineState.RunningOcr, AppScreen.ImageReview)
+            val progressStartedAt = System.currentTimeMillis()
+            val progressJob = launch {
+                val ocrStep = if (noteType == NoteType.Text) "OCR metni çıkarılıyor." else "Beyaz sayfa çıktısı hazırlanıyor."
+                val steps = listOf(
+                    "Tahta görüntüsü işleniyor.",
+                    "Tahta alanı bulunuyor.",
+                    "Model 2 görüntüyü iyileştiriyor.",
+                    ocrStep
+                )
+                steps.forEachIndexed { index, message ->
+                    _uiState.value = _uiState.value.copy(
+                        loadingMessage = message,
+                        screen = when (index) {
+                            1 -> AppScreen.BoardDetection
+                            2 -> AppScreen.Enhancement
+                            3 -> AppScreen.Ocr
+                            else -> AppScreen.ImageReview
+                        }
+                    )
+                    delay(850)
+                }
+            }
             runCatching {
                 val settings = _uiState.value.settings
                 val result = container.backendClient.runPipeline(
@@ -373,6 +396,10 @@ class Board2NotesViewModel(
                 )
                 applyBackendResultToNote(noteId, noteType, result)
             }.onSuccess { applied ->
+                val minimumProgressMs = if (noteType == NoteType.Text) 3000L else 2400L
+                val remainingProgressMs = minimumProgressMs - (System.currentTimeMillis() - progressStartedAt)
+                if (remainingProgressMs > 0) delay(remainingProgressMs)
+                progressJob.cancel()
                 val saved = applied.note
                 _uiState.value = _uiState.value.copy(
                     selectedSavedNote = saved,
@@ -392,6 +419,7 @@ class Board2NotesViewModel(
                     pendingCanvasImageAsset = applied.canvasInsertAsset,
                     screen = AppScreen.Note,
                     isBusy = false,
+                    loadingMessage = null,
                     userMessage = if (saved.noteType == NoteType.Canvas) {
                         "Tahta çıktısı not içine eklendi; konumlandırıp boyutlandırabilirsin."
                     } else {
@@ -400,6 +428,8 @@ class Board2NotesViewModel(
                 )
                 onCompleted?.invoke()
             }.onFailure { error ->
+                progressJob.cancel()
+                _uiState.value = _uiState.value.copy(loadingMessage = null)
                 fail("Backend pipeline çalıştırılamadı: ${error.message}", error)
             }
         }
@@ -540,6 +570,33 @@ class Board2NotesViewModel(
                 )
             }.onFailure { error ->
                 fail("Not taşınamadı: ${error.message}", error)
+            }
+        }
+    }
+
+    fun moveCourseNotesToGeneral(courseName: String) {
+        val normalized = courseName.trim()
+        if (normalized.isBlank() || normalized.equals("Genel", ignoreCase = true)) return
+        viewModelScope.launch {
+            runCatching {
+                _uiState.value.savedNotes
+                    .filter { it.courseName.ifBlank { "Genel" } == normalized }
+                    .forEach { note ->
+                        container.noteRepository.updateContent(
+                            id = note.id,
+                            title = note.title,
+                            body = note.body,
+                            courseName = ""
+                        )
+                    }
+            }.onSuccess {
+                _uiState.value = _uiState.value.copy(
+                    savedNotes = loadNotesSafely(),
+                    archivedNotes = loadArchivedNotesSafely(),
+                    userMessage = "$normalized dersi silindi; notlar Genel'e taşındı."
+                )
+            }.onFailure { error ->
+                fail("Ders silinemedi: ${error.message}", error)
             }
         }
     }

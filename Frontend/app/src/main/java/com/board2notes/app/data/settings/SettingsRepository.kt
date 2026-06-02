@@ -66,7 +66,7 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { prefs ->
             if (prefs[Keys.backendDeviceMigration] == true) return@edit
             val current = prefs[Keys.backendBaseUrl]?.trim()
-            if (current.isNullOrBlank() || current == EMULATOR_BACKEND_BASE_URL) {
+            if (current.isNullOrBlank()) {
                 prefs[Keys.backendBaseUrl] = DEFAULT_BACKEND_BASE_URL
             }
             prefs[Keys.backendDeviceMigration] = true
@@ -74,7 +74,7 @@ class SettingsRepository(private val context: Context) {
         context.settingsDataStore.edit { prefs ->
             if (prefs[Keys.backendAdbReverseMigration] == true) return@edit
             val current = prefs[Keys.backendBaseUrl]?.trim()
-            if (current.isNullOrBlank() || current == EMULATOR_BACKEND_BASE_URL || current == LAN_BACKEND_BASE_URL) {
+            if (current.isNullOrBlank()) {
                 prefs[Keys.backendBaseUrl] = ADB_REVERSE_BACKEND_BASE_URL
             }
             prefs[Keys.backendAdbReverseMigration] = true

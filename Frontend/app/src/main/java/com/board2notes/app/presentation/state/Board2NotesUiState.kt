@@ -45,6 +45,7 @@ data class Board2NotesUiState(
     val pipelineState: PipelineState = PipelineState.Idle,
     val isBusy: Boolean = false,
     val userMessage: String? = null,
+    val loadingMessage: String? = null,
     val debugFiles: List<File> = emptyList(),
     val pendingScanNoteId: String? = null,
     val pendingScanNoteType: NoteType? = null,

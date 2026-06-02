@@ -560,6 +560,16 @@ private val settingsDrawerDestination =
 
 private val customCourseColors = mutableStateMapOf<String, Color>()
 
+private fun persistCustomCourseColors(context: Context) {
+    val file = File(context.filesDir, "course_colors.txt")
+    runCatching {
+        val data = customCourseColors.entries
+            .sortedBy { it.key.lowercase() }
+            .joinToString("\n") { "${it.key}=${it.value.toArgb()}" }
+        file.writeText(data)
+    }
+}
+
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1060,17 +1070,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
                             customCourseColors[trimmed] = colorsList[selectedColorIndex]
 
-                            val file = File(context.filesDir, "course_colors.txt")
-
-                            runCatching {
-
-                                val data = customCourseColors.entries
-                                    .sortedBy { it.key.lowercase() }
-                                    .joinToString("\n") { "${it.key}=${it.value.toArgb()}" }
-
-                                file.writeText(data)
-
-                            }
+                            persistCustomCourseColors(context)
 
                             viewModel.showMessage("$trimmed dersi olusturuldu.")
 
@@ -2015,6 +2015,12 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     onCreateNote = {
                         popupCourseName = null
                         showCreateNoteSheet = true
+                    },
+                    onDeleteCourse = {
+                        customCourseColors.remove(course)
+                        persistCustomCourseColors(context)
+                        viewModel.moveCourseNotesToGeneral(course)
+                        popupCourseName = null
                     }
                 )
 
@@ -2104,15 +2110,15 @@ private fun Board2NoteNavigationDrawer(
 
                 Image(
 
-                    painter = androidx.compose.ui.res.painterResource(id = com.board2notes.app.R.drawable.b2n_logo),
+                    painter = androidx.compose.ui.res.painterResource(id = com.board2notes.app.R.drawable.b2n_appbar),
 
                     contentDescription = "B2N Logo",
 
                     modifier = Modifier
 
-                        .size(120.dp)
+                        .width(160.dp)
 
-                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .height(72.dp)
 
                 )
 
@@ -2732,73 +2738,19 @@ private fun BoardLoadingOverlay(message: String) {
 
         initialValue = 0f,
 
-        targetValue = 2f,
+        targetValue = 1f,
 
         animationSpec = infiniteRepeatable(
 
-            animation = tween(durationMillis = 2800, easing = LinearEasing),
+            animation = tween(durationMillis = 1500, easing = LinearEasing),
 
             repeatMode = RepeatMode.Restart
 
         ),
 
-        label = "chalk-and-logo-progress"
+        label = "compact-loading-progress"
 
     )
-
-
-
-    // Calculate progress for drawing phase (0f to 1f mapped from animProgress 0f to 1f)
-
-    val drawProgress = if (animProgress < 1f) {
-
-        0.08f + animProgress * 0.86f
-
-    } else {
-
-        0.94f
-
-    }
-
-
-
-    // Alphas for smooth transitioning
-
-    val chalkAlpha by remember(animProgress) {
-
-        androidx.compose.runtime.derivedStateOf {
-
-            if (animProgress < 1f) {
-
-                1f
-
-            } else {
-
-                (1.2f - animProgress).coerceIn(0f, 1f) // Fades out between 1.0 and 1.2
-
-            }
-
-        }
-
-    }
-
-    val logoAlpha by remember(animProgress) {
-
-        androidx.compose.runtime.derivedStateOf {
-
-            if (animProgress < 1f) {
-
-                0f
-
-            } else {
-
-                ((animProgress - 1f) / 0.3f).coerceIn(0f, 1f) // Fades in between 1.0 and 1.3
-
-            }
-
-        }
-
-    }
 
 
 
@@ -2810,7 +2762,7 @@ private fun BoardLoadingOverlay(message: String) {
 
             .fillMaxSize()
 
-            .background(if (isDark) Color(0xFF0F172A).copy(alpha = 0.75f) else Color.White.copy(alpha = 0.65f)),
+            .background(if (isDark) Color(0xFF020617).copy(alpha = 0.46f) else Color(0xFFF8FAFC).copy(alpha = 0.72f)),
 
         contentAlignment = Alignment.Center
 
@@ -2820,135 +2772,95 @@ private fun BoardLoadingOverlay(message: String) {
 
             modifier = Modifier
 
-                .widthIn(max = 260.dp) // Much smaller and more professional capsule
+                .widthIn(max = 236.dp)
 
                 .fillMaxWidth()
 
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 24.dp),
 
-            shape = RoundedCornerShape(20.dp),
+            shape = RoundedCornerShape(18.dp),
 
-            color = if (isDark) Color(0xFF1E293B) else Color(0xFF6366F1),
+            color = if (isDark) Color(0xFF111827) else Color.White,
 
-            shadowElevation = 10.dp,
+            tonalElevation = 4.dp,
 
-            border = androidx.compose.foundation.BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFF818CF8).copy(alpha = 0.5f))
+            shadowElevation = 12.dp,
+
+            border = BorderStroke(1.dp, if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
 
         ) {
 
             Column(
 
-                modifier = Modifier.padding(vertical = 16.dp, horizontal = 18.dp),
+                modifier = Modifier.padding(vertical = 16.dp, horizontal = 16.dp),
 
                 horizontalAlignment = Alignment.CenterHorizontally
 
             ) {
 
-                Text(
+                Image(
 
-                    "Board2Note",
+                    painter = androidx.compose.ui.res.painterResource(id = com.board2notes.app.R.drawable.b2n_appbar),
 
-                    style = MaterialTheme.typography.titleSmall,
-
-                    fontWeight = FontWeight.Bold,
-
-                    color = Color.White,
-
-                    letterSpacing = 0.5.sp
-
-                )
-
-                Spacer(Modifier.height(10.dp))
-
-                
-
-                // Small animated blackboard area
-
-                Box(
+                    contentDescription = "Board2Note",
 
                     modifier = Modifier
 
-                        .size(width = 180.dp, height = 48.dp),
+                        .width(132.dp)
 
-                    contentAlignment = Alignment.Center
+                        .height(46.dp),
+
+                    contentScale = androidx.compose.ui.layout.ContentScale.Fit
+
+                )
+
+                Spacer(Modifier.height(12.dp))
+
+                Canvas(
+
+                    modifier = Modifier
+
+                        .width(148.dp)
+
+                        .height(5.dp)
 
                 ) {
 
-                    // Chalkboard Base Canvas
+                    val radius = CornerRadius(size.height / 2f, size.height / 2f)
 
-                    Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawRoundRect(
 
-                        drawRoundRect(
+                        color = if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFE5E7EB),
 
-                            color = Color(0xFF1E1B4B),
+                        size = size,
 
-                            size = size,
+                        cornerRadius = radius
 
-                            cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx())
+                    )
 
-                        )
+                    val segmentWidth = size.width * 0.34f
 
-                        drawRoundRect(
+                    val x = ((size.width + segmentWidth) * animProgress) - segmentWidth
 
-                            color = Color(0xFF6366F1),
+                    val visibleStart = x.coerceIn(0f, size.width)
 
-                            size = size,
+                    val visibleWidth = (segmentWidth - (visibleStart - x)).coerceIn(0f, size.width - visibleStart)
 
-                            cornerRadius = CornerRadius(10.dp.toPx(), 10.dp.toPx()),
+                    drawRoundRect(
 
-                            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.2f.dp.toPx())
+                        color = Color(0xFF2563EB),
 
-                        )
+                        topLeft = Offset(visibleStart, 0f),
 
-                        
+                        size = Size(visibleWidth, size.height),
 
-                        // Chalk writing lines (fade controlled by chalkAlpha)
+                        cornerRadius = radius
 
-                        if (chalkAlpha > 0f) {
-
-                            val chalk = Color(0xFF6366F1).copy(alpha = chalkAlpha)
-
-                            val width = (size.width * drawProgress).coerceAtLeast(15f)
-
-                            drawLine(chalk, Offset(15f, size.height * 0.36f), Offset(width, size.height * 0.36f), strokeWidth = 3f)
-
-                            drawLine(chalk.copy(alpha = 0.78f * chalkAlpha), Offset(15f, size.height * 0.60f), Offset(width * 0.76f, size.height * 0.60f), strokeWidth = 2.5f)
-
-                            drawCircle(Color(0xFFF3B340).copy(alpha = chalkAlpha), radius = 4.dp.toPx(), center = Offset(width, size.height * 0.77f))
-
-                        }
-
-                    }
-
-
-
-                    // Logo image fade-in (b2n_appbar)
-
-                    if (logoAlpha > 0f) {
-
-                        Image(
-
-                            painter = androidx.compose.ui.res.painterResource(id = com.board2notes.app.R.drawable.b2n_appbar),
-
-                            contentDescription = null,
-
-                            modifier = Modifier
-
-                                .fillMaxSize()
-
-                                .padding(horizontal = 14.dp, vertical = 6.dp)
-
-                                .graphicsLayer { alpha = logoAlpha },
-
-                            contentScale = androidx.compose.ui.layout.ContentScale.Fit
-
-                        )
-
-                    }
+                    )
 
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
 
                 Text(
 
@@ -2956,7 +2868,7 @@ private fun BoardLoadingOverlay(message: String) {
 
                     style = MaterialTheme.typography.labelSmall,
 
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = if (isDark) Color.White.copy(alpha = 0.72f) else MaterialTheme.colorScheme.onSurfaceVariant,
 
                     textAlign = TextAlign.Center,
 
@@ -2978,7 +2890,9 @@ private fun BoardLoadingOverlay(message: String) {
 
 private fun loadingMessage(state: Board2NotesUiState): String = when {
 
-    state.pendingScanNoteId != null -> "FastAPI Model 1 ve Model 2 çalışıyor; çıktı açık nota yerleştirilecek."
+    !state.loadingMessage.isNullOrBlank() -> state.loadingMessage
+
+    state.pendingScanNoteId != null -> "Tahta görüntüsü işleniyor."
 
     state.screen == com.board2notes.app.presentation.state.AppScreen.ImageReview -> "Görsel hazırlanıyor."
 
@@ -10652,15 +10566,15 @@ private fun AboutScreen() {
 
             Image(
 
-                painter = painterResource(id = com.board2notes.app.R.drawable.b2n_logo),
+                painter = painterResource(id = com.board2notes.app.R.drawable.b2n_appbar),
 
                 contentDescription = "B2N Logo",
 
                 modifier = Modifier
 
-                    .size(110.dp)
+                    .width(160.dp)
 
-                    .clip(androidx.compose.foundation.shape.CircleShape)
+                    .height(72.dp)
 
             )
 
@@ -12332,12 +12246,15 @@ private fun CourseFolderPopup(
     notes: List<SavedNote>,
     onDismiss: () -> Unit,
     onOpenNote: (SavedNote) -> Unit,
-    onCreateNote: () -> Unit
+    onCreateNote: () -> Unit,
+    onDeleteCourse: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
     var visible by remember(courseName) { mutableStateOf(false) }
+    var showDeleteCourseDialog by remember(courseName) { mutableStateOf(false) }
     val courseColor = if (courseName == "Genel") Color(0xFF64748B) else folderColor(courseName)
     val sortedNotes = remember(notes) { notes.sortedByDescending { it.updatedAtEpochMs } }
+    val canDeleteCourse = !courseName.equals("Genel", ignoreCase = true)
 
     fun closeWithAnimation() {
         visible = false
@@ -12423,6 +12340,15 @@ private fun CourseFolderPopup(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        if (canDeleteCourse) {
+                            IconButton(onClick = { showDeleteCourseDialog = true }, modifier = Modifier.size(36.dp)) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Dersi sil",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                         IconButton(onClick = { closeWithAnimation() }, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.Default.Close, contentDescription = "Kapat")
@@ -12510,6 +12436,37 @@ private fun CourseFolderPopup(
                 }
             }
         }
+    }
+
+    if (showDeleteCourseDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteCourseDialog = false },
+            title = { Text("Dersi sil") },
+            text = {
+                Text(
+                    "'$courseName' dersi silinecek. Notlar silinmez; Genel klasörüne taşınır."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteCourseDialog = false
+                        onDeleteCourse()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Sil")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteCourseDialog = false }) {
+                    Text("Vazgeç")
+                }
+            }
+        )
     }
 }
 
