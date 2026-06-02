@@ -48,7 +48,11 @@ data class ImageElement(
     val top: Float,
     val width: Float,
     val height: Float,
-    val rotation: Float = 0f
+    val rotation: Float = 0f,
+    val initialLeft: Float = left,
+    val initialTop: Float = top,
+    val initialWidth: Float = width,
+    val initialHeight: Float = height
 ) : CanvasElement {
     val rect: Rect get() = Rect(left, top, left + width, top + height)
     val center: Offset get() = Offset(left + width / 2f, top + height / 2f)
@@ -174,7 +178,11 @@ object CanvasDocumentCodec {
                         left = element.left * sx,
                         top = element.top * sy,
                         width = element.width * sx,
-                        height = element.height * sy
+                        height = element.height * sy,
+                        initialLeft = element.initialLeft * sx,
+                        initialTop = element.initialTop * sy,
+                        initialWidth = element.initialWidth * sx,
+                        initialHeight = element.initialHeight * sy
                     )
                 }
             }
@@ -207,6 +215,10 @@ object CanvasDocumentCodec {
             put("w", round1(element.width))
             put("h", round1(element.height))
             put("r", round1(element.rotation))
+            put("ox", round1(element.initialLeft))
+            put("oy", round1(element.initialTop))
+            put("ow", round1(element.initialWidth))
+            put("oh", round1(element.initialHeight))
         }
     }
 
@@ -245,7 +257,11 @@ object CanvasDocumentCodec {
                     top = json.optDouble("y", 0.0).toFloat(),
                     width = json.optDouble("w", 1.0).toFloat().coerceAtLeast(1f),
                     height = json.optDouble("h", 1.0).toFloat().coerceAtLeast(1f),
-                    rotation = json.optDouble("r", 0.0).toFloat()
+                    rotation = json.optDouble("r", 0.0).toFloat(),
+                    initialLeft = json.optDouble("ox", json.optDouble("x", 0.0)).toFloat(),
+                    initialTop = json.optDouble("oy", json.optDouble("y", 0.0)).toFloat(),
+                    initialWidth = json.optDouble("ow", json.optDouble("w", 1.0)).toFloat().coerceAtLeast(1f),
+                    initialHeight = json.optDouble("oh", json.optDouble("h", 1.0)).toFloat().coerceAtLeast(1f)
                 )
             }
             else -> null

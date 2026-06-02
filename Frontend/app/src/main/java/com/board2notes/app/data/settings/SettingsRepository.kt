@@ -53,7 +53,7 @@ class SettingsRepository(private val context: Context) {
             allowFingerDrawing = prefs[Keys.allowFingerDrawing] ?: true,
             useStylusPressure = prefs[Keys.useStylusPressure] ?: true,
             palmRejection = prefs[Keys.palmRejection] ?: false,
-            defaultPenWidth = prefs[Keys.defaultPenWidth] ?: 5f,
+            defaultPenWidth = prefs[Keys.defaultPenWidth] ?: 30f,
             defaultEraserSize = prefs[Keys.defaultEraserSize] ?: 32f,
             canvasMinZoom = prefs[Keys.canvasMinZoom] ?: 0.5f,
             canvasMaxZoom = prefs[Keys.canvasMaxZoom] ?: 5f,
@@ -130,7 +130,7 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setDefaultPenWidth(value: Float) {
-        context.settingsDataStore.edit { it[Keys.defaultPenWidth] = value.coerceIn(2f, 28f) }
+        context.settingsDataStore.edit { it[Keys.defaultPenWidth] = value.coerceIn(1f, 100f) }
     }
 
     suspend fun setDefaultEraserSize(value: Float) {

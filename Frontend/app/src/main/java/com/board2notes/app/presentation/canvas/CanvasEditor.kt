@@ -1,6 +1,12 @@
 package com.board2notes.app.presentation.canvas
 
 import android.graphics.BitmapFactory
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -13,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,8 +31,11 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
@@ -181,6 +191,10 @@ fun CanvasEditor(
     recentColors: List<Color>,
     onColorUsed: (Color) -> Unit,
     onAddImage: () -> Unit,
+    pageControlsVisible: Boolean = true,
+    onChromeVisibleChange: (Boolean) -> Unit = {},
+    isFullscreen: Boolean = false,
+    onFullscreenChange: (Boolean) -> Unit = {},
     pendingInsertAsset: String? = null,
     onPendingInsertConsumed: () -> Unit = {},
     useDarkTheme: Boolean = false,
@@ -200,6 +214,14 @@ fun CanvasEditor(
     var showWidthMenu by remember { mutableStateOf(false) }
     var showEraserMenu by remember { mutableStateOf(false) }
     var showClearDialog by remember { mutableStateOf(false) }
+
+    fun hideChromeForGesture() {
+        onChromeVisibleChange(false)
+    }
+
+    fun showChromeFromGesture() {
+        if (!isFullscreen) onChromeVisibleChange(true)
+    }
 
     LaunchedEffect(canvasSize, controller.safePageIndex, input.minZoom, input.maxZoom) {
         if (canvasSize.width <= 0 || canvasSize.height <= 0) return@LaunchedEffect
@@ -389,6 +411,7 @@ fun CanvasEditor(
 
                             if (pressed.size >= 2) {
                                 if (!pinching) {
+                                    hideChromeForGesture()
                                     pinching = true
                                     liveStrokePoints = emptyList(); liveStrokePressures = emptyList()
                                     eraserCursor = null; marqueeRect = null
@@ -446,6 +469,12 @@ fun CanvasEditor(
                                         }
                                     }
                                     SingleAction.Pan -> {
+                                        if (totalDrag > 18f) {
+                                            when {
+                                                delta.y < -1.5f -> hideChromeForGesture()
+                                                delta.y > 1.5f -> showChromeFromGesture()
+                                            }
+                                        }
                                         controller.viewportOffset = clampViewportOffset(
                                             controller.viewportOffset + delta,
                                             controller.viewportScale,
@@ -505,6 +534,7 @@ fun CanvasEditor(
                                 if (erasing) { controller.endErase(); erasing = false }
                                 eraserCursor = null
                             }
+                            SingleAction.Pan -> Unit
                             SingleAction.SelectInteract -> when (selectMode) {
                                 SelectMode.Move, SelectMode.Resize -> {
                                     if (sessionStarted) { controller.endTransformSession(); sessionStarted = false }
@@ -584,6 +614,32 @@ fun CanvasEditor(
         }
 
         // Dock'lanan araç çubuğu
+        val selectedBounds = controller.selectionBounds()
+        if (selectedBounds != null && controller.tool == CanvasTool.Select && canvasSize.width > 0) {
+            val off = controller.viewportOffset
+            val sc = controller.viewportScale
+            val tl = canvasToScreen(Offset(selectedBounds.left, selectedBounds.top), off, sc)
+            val br = canvasToScreen(Offset(selectedBounds.right, selectedBounds.bottom), off, sc)
+            val canRestoreImage = controller.selectedElements().any { it is ImageElement }
+            SelectionActionBubble(
+                canRestore = canRestoreImage,
+                onDelete = { controller.deleteSelection() },
+                onRestore = { controller.restoreSelectedImagesToOriginalPlacement() },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .offset {
+                        val bubbleWidth = if (canRestoreImage) 156 else 82
+                        val x = ((tl.x + br.x) / 2f - bubbleWidth / 2f)
+                            .roundToInt()
+                            .coerceIn(8, (canvasSize.width - bubbleWidth - 8).coerceAtLeast(8))
+                        val y = (tl.y - 48f)
+                            .roundToInt()
+                            .coerceIn(8, (canvasSize.height - 48).coerceAtLeast(8))
+                        IntOffset(x, y)
+                    }
+            )
+        }
+
         if (canvasSize.width > 0) {
             DockableToolbar(
                 containerWidthPx = canvasSize.width.toFloat(),
@@ -617,7 +673,7 @@ fun CanvasEditor(
                     DropdownMenu(expanded = showWidthMenu, onDismissRequest = { showWidthMenu = false }) {
                         Column(Modifier.width(220.dp).padding(12.dp)) {
                             Text("Kalem kalınlığı: ${controller.strokeWidth.roundToInt()}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                            Slider(value = controller.strokeWidth, onValueChange = { controller.strokeWidth = it }, valueRange = 1f..24f)
+                            Slider(value = controller.strokeWidth, onValueChange = { controller.strokeWidth = it }, valueRange = 1f..100f)
                             Canvas(Modifier.width(196.dp).height(28.dp)) {
                                 drawLine(controller.color, Offset(8f, size.height / 2f), Offset(size.width - 8f, size.height / 2f), strokeWidth = controller.strokeWidth, cap = StrokeCap.Round)
                             }
@@ -653,7 +709,40 @@ fun CanvasEditor(
 
         // Sayfa gezinme çubuğu
         Surface(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 12.dp, end = 12.dp),
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+            shadowElevation = 6.dp
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clickable {
+                        val next = !isFullscreen
+                        onFullscreenChange(next)
+                        onChromeVisibleChange(!next)
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                    contentDescription = if (isFullscreen) "Tam ekrandan cik" else "Tam ekran",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = pageControlsVisible,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 14.dp),
+            enter = fadeIn(tween(140)) + scaleIn(tween(170), initialScale = 0.94f),
+            exit = fadeOut(tween(110)) + scaleOut(tween(130), targetScale = 0.96f)
+        ) {
+        Surface(
             shape = RoundedCornerShape(999.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -669,6 +758,7 @@ fun CanvasEditor(
                 }
             }
         }
+    }
     }
 
     if (showClearDialog) {
@@ -747,6 +837,67 @@ private fun DrawScope.drawImageElement(element: ImageElement, bitmap: ImageBitma
 
 // --- Araç çubuğu düğmesi ---
 
+@Composable
+private fun SelectionActionBubble(
+    canRestore: Boolean,
+    onDelete: () -> Unit,
+    onRestore: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        tonalElevation = 6.dp,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Surface(
+                modifier = Modifier.clickable(onClick = onDelete),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.errorContainer
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = "Sil",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            if (canRestore) {
+                Surface(
+                    modifier = Modifier.clickable(onClick = onRestore),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.75f)
+                ) {
+                    Icon(
+                        Icons.Default.Restore,
+                        contentDescription = "Ilk boyuta dondur",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(8.dp).size(17.dp)
+                    )
+                }
+            }
+        }
+        }
+    }
 @Composable
 private fun CanvasToolIconButton(
     icon: ImageVector,

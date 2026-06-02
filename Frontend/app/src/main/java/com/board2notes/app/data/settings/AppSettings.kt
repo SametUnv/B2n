@@ -27,7 +27,7 @@ data class AppSettings(
     val allowFingerDrawing: Boolean = true,
     val useStylusPressure: Boolean = true,
     val palmRejection: Boolean = false,
-    val defaultPenWidth: Float = 5f,
+    val defaultPenWidth: Float = 30f,
     val defaultEraserSize: Float = 32f,
     val canvasMinZoom: Float = 0.5f,
     val canvasMaxZoom: Float = 5f,

@@ -50,6 +50,8 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 
 import androidx.compose.foundation.horizontalScroll
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+
 import androidx.compose.foundation.layout.Arrangement
 
 import androidx.compose.foundation.layout.Box
@@ -396,6 +398,14 @@ import androidx.compose.animation.AnimatedVisibility
 
 import androidx.compose.animation.expandHorizontally
 
+import androidx.compose.animation.scaleIn
+
+import androidx.compose.animation.scaleOut
+
+import androidx.compose.animation.slideInVertically
+
+import androidx.compose.animation.slideOutVertically
+
 import androidx.compose.animation.shrinkHorizontally
 
 import androidx.compose.ui.platform.LocalDensity
@@ -594,6 +604,8 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
     var showCreateCourseDialog by remember { mutableStateOf(false) }
 
+    var popupCourseName by remember { mutableStateOf<String?>(null) }
+
 
 
     LaunchedEffect(Unit) {
@@ -612,19 +624,15 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
                 file.readLines().forEach { line ->
 
-                    val parts = line.split("=")
+                    val name = line.substringBefore("=").trim()
 
-                    if (parts.size == 2) {
+                    val value = line.substringAfter("=", "").trim()
 
-                        val name = parts[0]
+                    val argb = value.toIntOrNull()
 
-                        val argb = parts[1].toIntOrNull()
+                    if (name.isNotBlank() && argb != null) {
 
-                        if (argb != null) {
-
-                            customCourseColors[name] = Color(argb)
-
-                        }
+                        customCourseColors[name] = Color(argb)
 
                     }
 
@@ -1056,17 +1064,17 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
                             runCatching {
 
-                                val data = customCourseColors.entries.joinToString("\n") { "${it.key}=${it.value.toArgb()}" }
+                                val data = customCourseColors.entries
+                                    .sortedBy { it.key.lowercase() }
+                                    .joinToString("\n") { "${it.key}=${it.value.toArgb()}" }
 
                                 file.writeText(data)
 
                             }
 
-                            viewModel.createBlankNote(NoteType.Text, courseName = trimmed) {
+                            viewModel.showMessage("$trimmed dersi olusturuldu.")
 
-                                navController.navigate(Route.NoteEditor)
 
-                            }
 
                         }
 
@@ -1622,7 +1630,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
                         onFolderOpen = { course ->
 
-                            navController.navigate("${Route.Folder}/${Uri.encode(course)}")
+                            popupCourseName = course
 
                         },
 
@@ -1833,7 +1841,7 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
                         onFolderOpen = { course ->
 
-                            navController.navigate("${Route.Folder}/${Uri.encode(course)}")
+                            popupCourseName = course
 
                         },
 
@@ -1986,6 +1994,29 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
                     DebugArtifactsScreen(state, viewModel)
 
                 }
+
+            }
+
+            popupCourseName?.let { course ->
+
+                CourseFolderPopup(
+                    courseName = course,
+                    notes = state.savedNotes.filter {
+                        !it.isDeleted &&
+                            !it.isArchived &&
+                            it.courseName.ifBlank { "Genel" } == course
+                    },
+                    onDismiss = { popupCourseName = null },
+                    onOpenNote = { note ->
+                        popupCourseName = null
+                        viewModel.openSavedNote(note.id)
+                        navController.navigate(Route.NoteEditor)
+                    },
+                    onCreateNote = {
+                        popupCourseName = null
+                        showCreateNoteSheet = true
+                    }
+                )
 
             }
 
@@ -3353,9 +3384,18 @@ private fun HomeScreen(
 
 
 
-    val existingCourses = remember(state.savedNotes) {
+    val courseColorSnapshot = customCourseColors.toMap()
 
-        val courses = state.savedNotes.map { it.courseName.ifBlank { "Genel" } }.distinct().sorted()
+    val existingCourses = remember(state.savedNotes, courseColorSnapshot) {
+
+        val noteCourses = state.savedNotes
+            .filter { !it.isDeleted }
+            .map { it.courseName.ifBlank { "Genel" } }
+
+        val courses = (noteCourses + courseColorSnapshot.keys)
+            .map { it.ifBlank { "Genel" } }
+            .distinct()
+            .sorted()
 
         if ("Genel" !in courses) listOf("Genel") + courses else courses
 
@@ -7521,6 +7561,10 @@ private fun SamsungStyleNoteEditorScreen(
 
     var saveStatus by remember(state.activeSavedNoteId) { mutableStateOf("Kaydedildi") }
 
+    var canvasChromeVisible by remember(state.activeSavedNoteId) { mutableStateOf(true) }
+
+    var canvasFullscreen by remember(state.activeSavedNoteId) { mutableStateOf(false) }
+
 
 
     val scope = rememberCoroutineScope()
@@ -7569,9 +7613,14 @@ private fun SamsungStyleNoteEditorScreen(
 
 
 
-    val existingCourses = remember(state.savedNotes) {
+    val courseColorSnapshot = customCourseColors.toMap()
 
-        state.savedNotes.map { it.courseName }.filter { it.isNotBlank() }.distinct().sorted()
+    val existingCourses = remember(state.savedNotes, courseColorSnapshot) {
+
+        (state.savedNotes.map { it.courseName } + courseColorSnapshot.keys)
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
 
     }
 
@@ -7599,8 +7648,6 @@ private fun SamsungStyleNoteEditorScreen(
 
     }
 
-
-
     Column(
 
         modifier = Modifier
@@ -7610,6 +7657,12 @@ private fun SamsungStyleNoteEditorScreen(
             .background(Color.White)
 
     ) {
+
+        AnimatedVisibility(
+            visible = noteType != NoteType.Canvas || (!canvasFullscreen && canvasChromeVisible),
+            enter = fadeIn(tween(140)) + slideInVertically(tween(180)) { -it },
+            exit = fadeOut(tween(110)) + slideOutVertically(tween(150)) { -it }
+        ) {
 
         Surface(color = Color.White, tonalElevation = 0.dp, shadowElevation = 0.dp) {
 
@@ -7861,64 +7914,7 @@ private fun SamsungStyleNoteEditorScreen(
 
         }
 
-
-
-        Row(
-
-            modifier = Modifier
-
-                .fillMaxWidth()
-
-                .padding(horizontal = 18.dp, vertical = 4.dp),
-
-            verticalAlignment = Alignment.CenterVertically
-
-        ) {
-
-            Text(
-
-                if (course.isBlank() || course.equals("Genel", ignoreCase = true)) "" else course,
-
-                style = MaterialTheme.typography.labelSmall,
-
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-
-                maxLines = 1,
-
-                overflow = TextOverflow.Ellipsis,
-
-                modifier = Modifier.weight(1f)
-
-            )
-
-            if (noteType == NoteType.Text) {
-
-                Text(
-
-                    "$wordCount kelime",
-
-                    style = MaterialTheme.typography.labelSmall,
-
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-
-                )
-
-            } else {
-
-                Text(
-
-                    "${controller.safePageIndex + 1}/${controller.pageCount}",
-
-                    style = MaterialTheme.typography.labelSmall,
-
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-
-                )
-
-            }
-
         }
-
 
 
         if (noteType == NoteType.Text) {
@@ -8014,6 +8010,19 @@ private fun SamsungStyleNoteEditorScreen(
                 onColorUsed = { picked -> recentColors = (listOf(picked) + recentColors).distinct().take(8) },
 
                 onAddImage = { galleryInsertLauncher.launch("image/*") },
+
+                pageControlsVisible = !canvasFullscreen && canvasChromeVisible,
+
+                onChromeVisibleChange = { visible ->
+                    if (!canvasFullscreen || !visible) canvasChromeVisible = visible
+                },
+
+                isFullscreen = canvasFullscreen,
+
+                onFullscreenChange = { enabled ->
+                    canvasFullscreen = enabled
+                    canvasChromeVisible = !enabled
+                },
 
                 pendingInsertAsset = pendingInsert,
 
@@ -8163,15 +8172,25 @@ private fun NotesScreen(
 
     var query by remember { mutableStateOf("") }
 
-    val groups = remember(state.savedNotes) {
+    val courseColorSnapshot = customCourseColors.toMap()
 
-        state.savedNotes
+    val groups = remember(state.savedNotes, courseColorSnapshot) {
+
+        val noteGroups = state.savedNotes
+            .filter { !it.isDeleted }
 
             .groupBy { it.courseName.ifBlank { "Genel" } }
 
-            .entries
+        val allCourses = (noteGroups.keys + courseColorSnapshot.keys + "Genel")
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
 
-            .sortedByDescending { (_, notes) -> notes.maxOf { it.updatedAtEpochMs } }
+        allCourses.map { course ->
+
+            course to (noteGroups[course] ?: emptyList())
+
+        }
 
     }
 
@@ -8387,7 +8406,7 @@ private fun NotesScreen(
 
         } else {
 
-            if (state.savedNotes.isEmpty()) {
+            if (state.savedNotes.isEmpty() && customCourseColors.isEmpty()) {
 
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
 
@@ -9809,7 +9828,7 @@ private fun SamsungSettingsScreen(
 
                     )
 
-                    Slider(state.settings.defaultPenWidth, viewModel::setDefaultPenWidth, valueRange = 2f..28f, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
+                    Slider(state.settings.defaultPenWidth, viewModel::setDefaultPenWidth, valueRange = 1f..100f, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
 
                     Text(
 
@@ -12307,6 +12326,264 @@ private fun CourseFolderCard(
 
 }
 
+@Composable
+private fun CourseFolderPopup(
+    courseName: String,
+    notes: List<SavedNote>,
+    onDismiss: () -> Unit,
+    onOpenNote: (SavedNote) -> Unit,
+    onCreateNote: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var visible by remember(courseName) { mutableStateOf(false) }
+    val courseColor = if (courseName == "Genel") Color(0xFF64748B) else folderColor(courseName)
+    val sortedNotes = remember(notes) { notes.sortedByDescending { it.updatedAtEpochMs } }
+
+    fun closeWithAnimation() {
+        visible = false
+        scope.launch {
+            delay(170)
+            onDismiss()
+        }
+    }
+
+    LaunchedEffect(courseName) {
+        visible = true
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = if (visible) 0.22f else 0f))
+            .clickable { closeWithAnimation() },
+        contentAlignment = Alignment.Center
+    ) {
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn(tween(150)) + scaleIn(
+                animationSpec = tween(190),
+                initialScale = 0.92f
+            ),
+            exit = fadeOut(tween(120)) + scaleOut(
+                animationSpec = tween(150),
+                targetScale = 0.96f
+            )
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.84f)
+                    .widthIn(max = 420.dp)
+                    .heightIn(max = 460.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    ),
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 5.dp,
+                shadowElevation = 12.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(38.dp),
+                            shape = RoundedCornerShape(13.dp),
+                            color = courseColor.copy(alpha = 0.14f)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = courseColor,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = courseName,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "${sortedNotes.size} not",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { closeWithAnimation() }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Kapat")
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    if (sortedNotes.isEmpty()) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.Description,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                                    modifier = Modifier.size(28.dp)
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "Bu derste henuz not yok",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    text = "Yeni not olusturup bu derse atayabilirsin.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 280.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            sortedNotes.take(6).forEach { note ->
+                                FolderPopupNoteRow(
+                                    note = note,
+                                    courseColor = courseColor,
+                                    onClick = { onOpenNote(note) }
+                                )
+                            }
+                            if (sortedNotes.size > 6) {
+                                Text(
+                                    text = "+${sortedNotes.size - 6} not daha",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { closeWithAnimation() }) {
+                            Text("Kapat")
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Button(onClick = onCreateNote, shape = RoundedCornerShape(12.dp)) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Yeni not")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FolderPopupNoteRow(
+    note: SavedNote,
+    courseColor: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val previewPath = note.previewImagePath()
+            val bitmap = remember(previewPath) { previewPath?.let { BitmapFactory.decodeFile(it) } }
+            Surface(
+                modifier = Modifier.size(42.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = courseColor.copy(alpha = 0.12f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (bitmap != null) {
+                        Image(
+                            bitmap = bitmap.asImageBitmap(),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (note.noteType == NoteType.Canvas) Icons.Default.Image else Icons.Default.Description,
+                            contentDescription = null,
+                            tint = courseColor,
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = note.title.ifBlank { "Basliksiz not" },
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = formatDate(note.updatedAtEpochMs),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1
+                )
+            }
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
 
 
 @Composable
@@ -12441,6 +12718,8 @@ private fun NoteGridCard(
 
 private fun folderColor(courseName: String): Color {
 
+    customCourseColors[courseName]?.let { return it }
+
     val palette = listOf(
 
         Color(0xFF2563EB),
@@ -12457,7 +12736,7 @@ private fun folderColor(courseName: String): Color {
 
     )
 
-    return palette[Math.abs(courseName.hashCode()) % palette.size]
+    return palette[Math.floorMod(courseName.hashCode(), palette.size)]
 
 }
 

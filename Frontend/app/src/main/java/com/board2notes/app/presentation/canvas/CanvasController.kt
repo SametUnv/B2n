@@ -28,7 +28,7 @@ class CanvasController(
 
     var tool by mutableStateOf(CanvasTool.Pen)
     var color by mutableStateOf(Color.Black)
-    var strokeWidth by mutableStateOf(3f)
+    var strokeWidth by mutableStateOf(30f)
     var eraserSize by mutableStateOf(48f)
 
     var selection by mutableStateOf<Set<String>>(emptySet())
@@ -240,6 +240,30 @@ class CanvasController(
     fun deleteSelection() {
         if (selection.isEmpty()) return
         removeElements(selection)
+    }
+
+    fun restoreSelectedImagesToOriginalPlacement() {
+        if (selection.isEmpty()) return
+        val selectedImageIds = currentPage()
+            .filterIsInstance<ImageElement>()
+            .filter { it.id in selection }
+            .map { it.id }
+            .toSet()
+        if (selectedImageIds.isEmpty()) return
+        replaceCurrentPage(currentPage().map { element ->
+            if (element is ImageElement && element.id in selectedImageIds) {
+                element.copy(
+                    left = element.initialLeft,
+                    top = element.initialTop,
+                    width = element.initialWidth,
+                    height = element.initialHeight,
+                    rotation = 0f
+                )
+            } else {
+                element
+            }
+        })
+        selection = selectedImageIds
     }
 
     // --- Undo / Redo ---
