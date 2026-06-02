@@ -19,6 +19,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.BackHandler
 
 import androidx.activity.result.contract.ActivityResultContracts
 
@@ -726,6 +727,11 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
     val topLevel = route in setOf(Route.Home, Route.Notes, Route.Settings)
 
+    BackHandler(enabled = state.pendingScanNoteId != null && route in setOf(Route.Capture, Route.Review)) {
+        viewModel.cancelPendingScan()
+        navController.popBackStack()
+    }
+
 
 
     if (showCreateNoteSheet) {
@@ -1340,7 +1346,10 @@ fun Board2NotesApp(viewModel: Board2NotesViewModel) {
 
                             if (!topLevel) {
 
-                                IconButton(onClick = { navController.popBackStack() }) {
+                                IconButton(onClick = {
+                                    if (route in setOf(Route.Capture, Route.Review)) viewModel.cancelPendingScan()
+                                    navController.popBackStack()
+                                }) {
 
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
 
@@ -3377,7 +3386,7 @@ private fun HomeScreen(
 
                     val count = state.savedNotes.count { 
 
-                        it.courseName == (if (courseName == "Genel") "" else courseName) && !it.isArchived 
+                        it.courseName == (if (courseName == "Genel") "" else courseName) && !it.isArchived && !it.isDeleted
 
                     }
 
@@ -5017,7 +5026,7 @@ private fun ConfirmDeleteNoteDialog(
 
         title = { Text(title, fontWeight = FontWeight.Bold) },
 
-        text = { Text("Bu işlem geri alınamaz.") },
+        text = { Text("Bu not çöp kutusuna taşınacak. Daha sonra geri yükleyebilirsiniz.") },
 
         confirmButton = {
 
@@ -7428,6 +7437,9 @@ private fun SamsungStyleNoteEditorScreen(
     // Yazı notu içeriği (Text türü)
 
     val initialDoc = remember(note.createdAtEpochMs, state.activeSavedNoteId) { CanvasDocument.fromBody(note.body) }
+    val allowLegacyBackgroundFallback = remember(note.createdAtEpochMs, state.activeSavedNoteId) {
+        !CanvasDocumentCodec.hasStructuredDocument(note.body)
+    }
 
     var cleanText by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(initialDoc.text) }
 
@@ -7458,6 +7470,7 @@ private fun SamsungStyleNoteEditorScreen(
     }
 
     var pendingInsert by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf<String?>(null) }
+    var pendingInsertPageIndex by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf<Int?>(null) }
 
     var recentColors by remember { mutableStateOf(listOf(Color.Black, Color(0xFF2563EB), Color(0xFFEF4444), Color(0xFF10B981))) }
 
@@ -7507,6 +7520,7 @@ private fun SamsungStyleNoteEditorScreen(
 
                     }
 
+                    pendingInsertPageIndex = controller.safePageIndex
                     pendingInsert = asset
 
                 }
@@ -7517,11 +7531,15 @@ private fun SamsungStyleNoteEditorScreen(
 
     }
 
-    LaunchedEffect(state.pendingCanvasImageAsset) {
+    LaunchedEffect(state.pendingCanvasImageAsset, state.pendingCanvasImagePageIndex) {
 
         val pending = state.pendingCanvasImageAsset
 
-        if (pending != null) { pendingInsert = pending; viewModel.clearPendingCanvasImage() }
+        if (pending != null) {
+            pendingInsert = pending
+            pendingInsertPageIndex = state.pendingCanvasImagePageIndex
+            viewModel.clearPendingCanvasImage()
+        }
 
     }
 
@@ -7562,13 +7580,28 @@ private fun SamsungStyleNoteEditorScreen(
 
     }
 
+    var exitRequested by remember(state.activeSavedNoteId) { mutableStateOf(false) }
+
+    fun saveAndExit() {
+        if (exitRequested) return
+        exitRequested = true
+        val effectiveBody = if (noteType == NoteType.Canvas) canvasBody else body
+        viewModel.updateNote(title, effectiveBody, course)
+        viewModel.saveCurrentNote(
+            onSaved = onNotes,
+            onFailed = { exitRequested = false }
+        )
+    }
+
+    BackHandler(onBack = ::saveAndExit)
+
     Column(
 
         modifier = Modifier
 
             .fillMaxSize()
 
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.background)
 
     ) {
 
@@ -7578,7 +7611,7 @@ private fun SamsungStyleNoteEditorScreen(
             exit = fadeOut(tween(110)) + slideOutVertically(tween(150)) { -it }
         ) {
 
-        Surface(color = Color.White, tonalElevation = 0.dp, shadowElevation = 0.dp) {
+        Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp, shadowElevation = 0.dp) {
 
             Row(
 
@@ -7594,7 +7627,7 @@ private fun SamsungStyleNoteEditorScreen(
 
             ) {
 
-                IconButton(onClick = onNotes) {
+                IconButton(onClick = ::saveAndExit) {
 
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
 
@@ -7780,9 +7813,7 @@ private fun SamsungStyleNoteEditorScreen(
 
                                 showMoreMenu = false
 
-                                viewModel.updateNote(title, if (noteType == NoteType.Canvas) canvasBody else body, course)
-
-                                viewModel.saveCurrentNote(onNotes)
+                                saveAndExit()
 
                             }
 
@@ -7940,7 +7971,16 @@ private fun SamsungStyleNoteEditorScreen(
 
                 pendingInsertAsset = pendingInsert,
 
-                onPendingInsertConsumed = { pendingInsert = null },
+                pendingInsertPageIndex = pendingInsertPageIndex,
+
+                onPendingInsertConsumed = {
+                    pendingInsert = null
+                    pendingInsertPageIndex = null
+                },
+
+                allowLegacyBackgroundFallback = allowLegacyBackgroundFallback,
+
+                useDarkTheme = state.settings.useDarkTheme,
 
                 modifier = Modifier
 
@@ -8756,7 +8796,7 @@ private fun NoteDetailScreen(
 
             },
 
-            text = { Text("Bu işlem geri alınamaz.") },
+            text = { Text("Bu not çöp kutusuna taşınacak. Daha sonra geri yükleyebilirsiniz.") },
 
             confirmButton = {
 
@@ -11448,7 +11488,7 @@ private fun FolderScreen(
 
             },
 
-            text = { Text("Bu işlem geri alınamaz.") },
+            text = { Text("Seçilen notlar çöp kutusuna taşınacak. Daha sonra geri yükleyebilirsiniz.") },
 
             confirmButton = {
 
