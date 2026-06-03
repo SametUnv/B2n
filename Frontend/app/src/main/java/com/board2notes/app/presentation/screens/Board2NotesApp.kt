@@ -281,6 +281,11 @@ import androidx.compose.ui.input.pointer.pointerInput
 
 import androidx.compose.ui.platform.LocalContext
 
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 
 import androidx.compose.ui.text.style.TextAlign
@@ -352,6 +357,8 @@ import com.board2notes.app.presentation.canvas.CanvasDocument
 import com.board2notes.app.presentation.canvas.CanvasDocumentCodec
 
 import com.board2notes.app.presentation.canvas.CanvasEditor
+import com.board2notes.app.presentation.text.TextNoteBlock
+import com.board2notes.app.presentation.text.TextNoteCodec
 
 import com.board2notes.app.presentation.canvas.CanvasInputSettings
 
@@ -4085,19 +4092,9 @@ private fun SamsungNoteCard(
 
                             .fillMaxSize()
 
-                            .background(Color(0xFFFAFAFA))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
 
-                            .border(
-
-                                width = 1.dp,
-
-                                color = Color(0xFFEFF6FF),
-
-                                shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
-
-                            )
-
-                            .padding(10.dp)
+                            .padding(12.dp)
 
                     ) {
 
@@ -4105,15 +4102,15 @@ private fun SamsungNoteCard(
 
                             text = note.preview,
 
-                            fontSize = 8.5.sp,
+                            fontSize = 13.sp,
 
-                            lineHeight = 11.sp,
+                            lineHeight = 18.sp,
 
-                            fontWeight = FontWeight.Normal,
+                            fontWeight = FontWeight.Medium,
 
-                            color = Color(0xFF475569),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
 
-                            maxLines = 6,
+                            maxLines = 4,
 
                             overflow = TextOverflow.Ellipsis,
 
@@ -4383,19 +4380,9 @@ private fun SamsungNoteCard(note: SavedNote, onClick: () -> Unit) {
 
                             .fillMaxSize()
 
-                            .background(Color(0xFFFAFAFA))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
 
-                            .border(
-
-                                width = 1.dp,
-
-                                color = Color(0xFFEFF6FF),
-
-                                shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
-
-                            )
-
-                            .padding(10.dp)
+                            .padding(12.dp)
 
                     ) {
 
@@ -4403,15 +4390,15 @@ private fun SamsungNoteCard(note: SavedNote, onClick: () -> Unit) {
 
                             text = note.preview,
 
-                            fontSize = 8.5.sp,
+                            fontSize = 13.sp,
 
-                            lineHeight = 11.sp,
+                            lineHeight = 18.sp,
 
-                            fontWeight = FontWeight.Normal,
+                            fontWeight = FontWeight.Medium,
 
-                            color = Color(0xFF475569),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
 
-                            maxLines = 6,
+                            maxLines = 4,
 
                             overflow = TextOverflow.Ellipsis,
 
@@ -7714,6 +7701,37 @@ private fun SamsungStyleNoteEditorScreen(
 
     var body by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf(note.body) }
 
+    // Yazı notu: blok modeli (metin + görsel)
+    val textBlocks = remember(note.createdAtEpochMs, state.activeSavedNoteId) {
+        androidx.compose.runtime.mutableStateListOf<TextNoteBlock>().also {
+            it.addAll(TextNoteCodec.parse(note.body).ifEmpty { listOf(TextNoteBlock.Text("")) })
+        }
+    }
+    val textBlockTfvs = remember(note.createdAtEpochMs, state.activeSavedNoteId) {
+        androidx.compose.runtime.mutableStateMapOf<String, TextFieldValue>()
+    }
+    val textBlockIds = remember(note.createdAtEpochMs, state.activeSavedNoteId) {
+        androidx.compose.runtime.mutableStateListOf<String>().also {
+            repeat(textBlocks.size) { _ -> it.add(java.util.UUID.randomUUID().toString()) }
+        }
+    }
+    val textBlockFocusRequesters = remember(note.createdAtEpochMs, state.activeSavedNoteId) {
+        androidx.compose.runtime.mutableStateMapOf<String, FocusRequester>()
+    }
+    var focusedTextBlockId by remember(note.createdAtEpochMs, state.activeSavedNoteId) {
+        mutableStateOf<String?>(
+            textBlockIds.indices.firstOrNull { textBlocks[it] is TextNoteBlock.Text }?.let { textBlockIds[it] }
+        )
+    }
+    var pendingFocusBlockId by remember(note.createdAtEpochMs, state.activeSavedNoteId) {
+        mutableStateOf<String?>(null)
+    }
+
+    fun syncTextNoteBody() {
+        body = TextNoteCodec.serialize(textBlocks.toList())
+        cleanText = TextNoteCodec.stripMarker(body)
+    }
+
 
 
     // Canvas durumu (Canvas türü) — denetleyici tüm çizim durumunu tutar
@@ -7798,6 +7816,54 @@ private fun SamsungStyleNoteEditorScreen(
 
         }
 
+    }
+
+    val textGalleryInsertLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        val id = state.activeSavedNoteId
+        if (uri != null && id != null) {
+            scope.launch {
+                val bmp = withContext(Dispatchers.IO) {
+                    runCatching { BitmapLoader.decodeFromUri(context, uri) }.getOrNull()
+                }
+                if (bmp != null) {
+                    val asset = CanvasAssets.newImageAssetName()
+                    withContext(Dispatchers.IO) {
+                        val file = CanvasAssets.imageFile(context.filesDir, id, asset)
+                        file.parentFile?.mkdirs()
+                        file.outputStream().use { out ->
+                            bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                        }
+                    }
+                    val focusedId = focusedTextBlockId
+                    val fi = focusedId?.let { textBlockIds.indexOf(it) } ?: -1
+                    val insertionIndex = if (fi >= 0 && fi < textBlocks.size && textBlocks[fi] is TextNoteBlock.Text) fi else textBlocks.lastIndex
+                    val current = (textBlocks.getOrNull(insertionIndex) as? TextNoteBlock.Text)?.text.orEmpty()
+                    val caret = focusedId?.let { textBlockTfvs[it]?.selection?.start }?.coerceIn(0, current.length) ?: current.length
+                    val pre = current.substring(0, caret)
+                    val post = current.substring(caret)
+                    val imageBlockId = java.util.UUID.randomUUID().toString()
+                    val postId = java.util.UUID.randomUUID().toString()
+                    if (insertionIndex >= 0) {
+                        textBlocks[insertionIndex] = TextNoteBlock.Text(pre)
+                        textBlockTfvs[textBlockIds[insertionIndex]] = TextFieldValue(pre, TextRange(pre.length))
+                        textBlocks.add(insertionIndex + 1, TextNoteBlock.Image(asset))
+                        textBlockIds.add(insertionIndex + 1, imageBlockId)
+                        textBlocks.add(insertionIndex + 2, TextNoteBlock.Text(post))
+                        textBlockIds.add(insertionIndex + 2, postId)
+                        textBlockTfvs[postId] = TextFieldValue(post, TextRange(0))
+                    } else {
+                        textBlocks.add(TextNoteBlock.Image(asset))
+                        textBlockIds.add(imageBlockId)
+                        textBlocks.add(TextNoteBlock.Text(""))
+                        textBlockIds.add(postId)
+                        textBlockTfvs[postId] = TextFieldValue("", TextRange(0))
+                    }
+                    focusedTextBlockId = postId
+                    pendingFocusBlockId = postId
+                    syncTextNoteBody()
+                }
+            }
+        }
     }
 
     LaunchedEffect(state.pendingCanvasImageAsset, state.pendingCanvasImagePageIndex) {
@@ -8008,13 +8074,15 @@ private fun SamsungStyleNoteEditorScreen(
 
                             leadingIcon = { Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.secondary) },
 
-                            enabled = noteType == NoteType.Canvas,
-
                             onClick = {
 
                                 showAddMenu = false
 
-                                galleryInsertLauncher.launch("image/*")
+                                if (noteType == NoteType.Canvas) {
+                                    galleryInsertLauncher.launch("image/*")
+                                } else {
+                                    textGalleryInsertLauncher.launch("image/*")
+                                }
 
                             }
 
@@ -8133,66 +8201,131 @@ private fun SamsungStyleNoteEditorScreen(
 
         if (noteType == NoteType.Text) {
 
-            Box(
+            val noteId = state.activeSavedNoteId
+            val emptyDocAndPlaceholderShown = textBlocks.size == 1 &&
+                (textBlocks[0] as? TextNoteBlock.Text)?.text.isNullOrEmpty()
 
+            Column(
                 modifier = Modifier
-
                     .weight(1f)
-
                     .fillMaxWidth()
-
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 22.dp, vertical = 8.dp)
-
             ) {
-
-                androidx.compose.foundation.text.BasicTextField(
-
-                    value = cleanText,
-
-                    onValueChange = {
-
-                        cleanText = it
-
-                        body = cleanText
-
-                        viewModel.updateNote(title, cleanText, course)
-
-                    },
-
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(
-
-                        fontSize = 17.sp,
-
-                        lineHeight = 27.sp,
-
-                        color = MaterialTheme.colorScheme.onSurface
-
-                    ),
-
-                    modifier = Modifier.fillMaxSize(),
-
-                    decorationBox = { inner ->
-
-                        if (cleanText.isBlank()) {
-
-                            Text(
-
-                                "Not yazmaya başlayın...",
-
-                                style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
-
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-
+                textBlocks.forEachIndexed { index, block ->
+                    val id = textBlockIds.getOrNull(index) ?: return@forEachIndexed
+                    when (block) {
+                        is TextNoteBlock.Text -> {
+                            val tfv = textBlockTfvs.getOrPut(id) {
+                                TextFieldValue(block.text, TextRange(block.text.length))
+                            }
+                            val focusRequester = textBlockFocusRequesters.getOrPut(id) { FocusRequester() }
+                            if (pendingFocusBlockId == id) {
+                                LaunchedEffect(id) {
+                                    runCatching { focusRequester.requestFocus() }
+                                    pendingFocusBlockId = null
+                                }
+                            }
+                            androidx.compose.foundation.text.BasicTextField(
+                                value = tfv,
+                                onValueChange = { newTfv ->
+                                    textBlockTfvs[id] = newTfv
+                                    val currentIdx = textBlockIds.indexOf(id)
+                                    if (currentIdx >= 0 && currentIdx < textBlocks.size) {
+                                        textBlocks[currentIdx] = TextNoteBlock.Text(newTfv.text)
+                                    }
+                                    syncTextNoteBody()
+                                },
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                    fontSize = 17.sp,
+                                    lineHeight = 27.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(focusRequester)
+                                    .onFocusChanged { if (it.isFocused) focusedTextBlockId = id },
+                                decorationBox = { inner ->
+                                    if (emptyDocAndPlaceholderShown && index == 0) {
+                                        Text(
+                                            "Not yazmaya başlayın...",
+                                            style = MaterialTheme.typography.bodyLarge.copy(fontSize = 17.sp),
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+                                        )
+                                    }
+                                    inner()
+                                }
                             )
-
                         }
-
-                        inner()
-
+                        is TextNoteBlock.Image -> {
+                            val bmp = remember(block.asset, noteId) {
+                                if (noteId.isNullOrEmpty()) null
+                                else runCatching {
+                                    BitmapFactory.decodeFile(
+                                        CanvasAssets.imageFile(context.filesDir, noteId, block.asset).absolutePath
+                                    )
+                                }.getOrNull()
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                if (bmp != null) {
+                                    Image(
+                                        bitmap = bmp.asImageBitmap(),
+                                        contentDescription = "Eklenen görsel",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        val currentIdx = textBlockIds.indexOf(id)
+                                        if (currentIdx < 0) return@IconButton
+                                        val prev = textBlocks.getOrNull(currentIdx - 1) as? TextNoteBlock.Text
+                                        val next = textBlocks.getOrNull(currentIdx + 1) as? TextNoteBlock.Text
+                                        if (prev != null && next != null) {
+                                            val prevId = textBlockIds[currentIdx - 1]
+                                            val mergedText = prev.text + next.text
+                                            textBlocks[currentIdx - 1] = TextNoteBlock.Text(mergedText)
+                                            textBlockTfvs[prevId] = TextFieldValue(mergedText, TextRange(prev.text.length))
+                                            textBlocks.removeAt(currentIdx + 1)
+                                            textBlockIds.removeAt(currentIdx + 1)
+                                            textBlocks.removeAt(currentIdx)
+                                            textBlockIds.removeAt(currentIdx)
+                                            focusedTextBlockId = prevId
+                                            pendingFocusBlockId = prevId
+                                        } else {
+                                            textBlocks.removeAt(currentIdx)
+                                            textBlockIds.removeAt(currentIdx)
+                                        }
+                                        noteId?.let { nid ->
+                                            runCatching {
+                                                CanvasAssets.imageFile(context.filesDir, nid, block.asset).delete()
+                                            }
+                                        }
+                                        syncTextNoteBody()
+                                    },
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(6.dp)
+                                        .size(28.dp)
+                                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f), CircleShape)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Görseli sil",
+                                        modifier = Modifier.size(16.dp),
+                                        tint = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
                     }
-
-                )
-
+                }
             }
 
         } else {
@@ -9463,21 +9596,52 @@ private fun NoteDetailScreen(
 
                 } else {
 
-
-
-                    Text(
-
-                        noteBody.ifBlank { "Boş not" },
-
-                        style = MaterialTheme.typography.bodyLarge,
-
-                        color = MaterialTheme.colorScheme.onSurface,
-
-                        lineHeight = 24.sp
-
-                    )
-
-
+                    val parsedBlocks = remember(noteBody) { TextNoteCodec.parse(noteBody) }
+                    val isEmpty = parsedBlocks.isEmpty() || (parsedBlocks.size == 1 &&
+                        (parsedBlocks[0] as? TextNoteBlock.Text)?.text.isNullOrBlank())
+                    if (isEmpty) {
+                        Text(
+                            "Boş not",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            lineHeight = 24.sp
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            parsedBlocks.forEach { block ->
+                                when (block) {
+                                    is TextNoteBlock.Text -> {
+                                        if (block.text.isNotEmpty()) {
+                                            Text(
+                                                block.text,
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                lineHeight = 24.sp
+                                            )
+                                        }
+                                    }
+                                    is TextNoteBlock.Image -> {
+                                        val bmpImg = remember(block.asset, note.id) {
+                                            runCatching {
+                                                BitmapFactory.decodeFile(
+                                                    CanvasAssets.imageFile(context.filesDir, note.id, block.asset).absolutePath
+                                                )
+                                            }.getOrNull()
+                                        }
+                                        if (bmpImg != null) {
+                                            Image(
+                                                bitmap = bmpImg.asImageBitmap(),
+                                                contentDescription = "Görsel",
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(12.dp))
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                 }
 
@@ -13138,6 +13302,13 @@ private fun shareSavedNote(context: Context, note: SavedNote) {
 
 
 
+private fun String.stripCanvasMarkers(): String =
+    substringBefore("[[B2N_CANVAS_V2]]")
+        .substringBefore("[CanvasPages:")
+        .substringBefore("[DrawingData:")
+        .substringBefore("[[B2N_TEXT_V1]]")
+        .trim()
+
 private fun FormattedNote.toShareText(): String = buildString {
 
     appendLine(title)
@@ -13146,7 +13317,7 @@ private fun FormattedNote.toShareText(): String = buildString {
 
     appendLine()
 
-    append(body)
+    append(body.stripCanvasMarkers())
 
 }
 
@@ -13160,7 +13331,12 @@ private fun SavedNote.toShareText(): String = buildString {
 
     appendLine()
 
-    append(body)
+    val clean = body.stripCanvasMarkers()
+    if (clean.isNotEmpty()) {
+        append(clean)
+    } else if (noteType == NoteType.Canvas) {
+        append("Canvas Çizim Notu")
+    }
 
 }
 

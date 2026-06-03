@@ -802,9 +802,7 @@ fun CanvasEditor(
                 modifier = Modifier
                     .size(42.dp)
                     .clickable {
-                        val next = !isFullscreen
-                        onFullscreenChange(next)
-                        onChromeVisibleChange(!next)
+                        onFullscreenChange(!isFullscreen)
                     },
                 contentAlignment = Alignment.Center
             ) {

@@ -33,6 +33,8 @@ data class SavedNote(
 
                 .substringBefore("[DrawingData:")
 
+                .substringBefore("[[B2N_TEXT_V1]]")
+
                 .trim()
 
             if (cleanText.isNotBlank()) return cleanText.take(140)
