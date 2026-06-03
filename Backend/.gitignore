@@ -1,0 +1,14 @@
+.venv
+
+# Output and build artifacts
+outputs/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Environment files
+.env
