@@ -14,7 +14,9 @@ import com.board2notes.app.data.backend.BackendPipelineResult
 import com.board2notes.app.data.image.BitmapLoader
 import com.board2notes.app.data.image.BitmapPerspectiveCorrector
 import com.board2notes.app.data.image.InkDarkener
+import com.board2notes.app.data.settings.AppSettings
 import com.board2notes.app.data.settings.OcrEngineChoice
+import com.board2notes.app.data.settings.SettingsRepository
 import com.board2notes.app.domain.model.EnhancementMode
 import com.board2notes.app.domain.model.FormattedNote
 import com.board2notes.app.domain.model.NoteType
@@ -45,7 +47,13 @@ class Board2NotesViewModel(
     application: Application,
     private val container: AppContainer
 ) : AndroidViewModel(application) {
-    private val _uiState = MutableStateFlow(Board2NotesUiState())
+    private val _uiState = MutableStateFlow(
+        Board2NotesUiState(
+            settings = AppSettings(
+                useDarkTheme = SettingsRepository.cachedUseDarkTheme(application)
+            )
+        )
+    )
     val uiState: StateFlow<Board2NotesUiState> = _uiState.asStateFlow()
     private var pendingScanJob: Job? = null
 

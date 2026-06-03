@@ -12,7 +12,15 @@ import kotlinx.coroutines.flow.map
 
 private val Context.settingsDataStore by preferencesDataStore(name = "board2notes_settings")
 
+private const val THEME_CACHE_PREFS = "b2n_theme_cache"
+private const val THEME_CACHE_KEY_DARK = "use_dark_theme"
+private const val DEFAULT_USE_DARK_THEME = false
+
 class SettingsRepository(private val context: Context) {
+    private val themeCachePrefs by lazy {
+        context.getSharedPreferences(THEME_CACHE_PREFS, Context.MODE_PRIVATE)
+    }
+
     private object Keys {
         val threshold = floatPreferencesKey("threshold")
         val debugMode = booleanPreferencesKey("debug_mode")
@@ -38,6 +46,10 @@ class SettingsRepository(private val context: Context) {
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         val storedBackendBaseUrl = prefs[Keys.backendBaseUrl]?.trim().orEmpty()
+        val darkTheme = prefs[Keys.useDarkTheme] ?: DEFAULT_USE_DARK_THEME
+        if (themeCachePrefs.getBoolean(THEME_CACHE_KEY_DARK, DEFAULT_USE_DARK_THEME) != darkTheme) {
+            themeCachePrefs.edit().putBoolean(THEME_CACHE_KEY_DARK, darkTheme).apply()
+        }
         AppSettings(
             threshold = prefs[Keys.threshold] ?: 0.5f,
             debugMode = prefs[Keys.debugMode] ?: false,
@@ -58,7 +70,7 @@ class SettingsRepository(private val context: Context) {
             canvasMinZoom = prefs[Keys.canvasMinZoom] ?: 0.5f,
             canvasMaxZoom = prefs[Keys.canvasMaxZoom] ?: 5f,
             inkDarkness = prefs[Keys.inkDarkness] ?: 0.6f,
-            useDarkTheme = prefs[Keys.useDarkTheme] ?: true
+            useDarkTheme = darkTheme
         )
     }
 
@@ -151,6 +163,13 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun setUseDarkTheme(value: Boolean) {
+        themeCachePrefs.edit().putBoolean(THEME_CACHE_KEY_DARK, value).apply()
         context.settingsDataStore.edit { it[Keys.useDarkTheme] = value }
+    }
+
+    companion object {
+        fun cachedUseDarkTheme(context: Context): Boolean =
+            context.getSharedPreferences(THEME_CACHE_PREFS, Context.MODE_PRIVATE)
+                .getBoolean(THEME_CACHE_KEY_DARK, DEFAULT_USE_DARK_THEME)
     }
 }
