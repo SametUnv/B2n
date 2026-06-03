@@ -3664,9 +3664,9 @@ private fun HomeScreen(
 
                                                         fingerPosition = absoluteTouch
 
-                                                        currentHoveredCourse = courseBounds.entries.firstOrNull { 
+                                                        currentHoveredCourse = courseBounds.entries.firstOrNull {
 
-                                                            it.value.contains(absoluteTouch) 
+                                                            it.value.contains(absoluteTouch)
 
                                                         }?.key
 
@@ -10339,74 +10339,6 @@ private fun SamsungSettingsScreen(
 
                 // AI & Backend
 
-                SamsungSettingsSection("Not Yapılandırması") {
-
-                    SettingInfoRow(Icons.Default.Description, "Varsayılan kayıt", "Otomatik kaydetme açık")
-
-                    SettingSwitchRow(
-
-                        Icons.Default.AutoAwesome,
-
-                        "LLM ile düzenleme",
-
-                        "Not oluşturma tercihleri",
-
-                        state.settings.llmEnabled,
-
-                        viewModel::setLlmEnabled
-
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Text(
-
-                        "Model 2 önceliği",
-
-                        style = MaterialTheme.typography.labelLarge,
-
-                        fontWeight = FontWeight.SemiBold,
-
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-
-                    )
-
-                    Spacer(Modifier.height(8.dp))
-
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-
-                        ModeButton("OCR", state.settings.enhancementMode == EnhancementMode.Ocr, Modifier.weight(1f)) {
-
-                            viewModel.setEnhancementMode(EnhancementMode.Ocr)
-
-                        }
-
-                        ModeButton("Beyaz sayfa", state.settings.enhancementMode == EnhancementMode.VisualNote, Modifier.weight(1f)) {
-
-                            viewModel.setEnhancementMode(EnhancementMode.VisualNote)
-
-                        }
-
-                    }
-
-                    Spacer(Modifier.height(12.dp))
-
-                    Text(
-
-                        "Tahta hassasiyeti: ${"%.2f".format(state.settings.threshold)}",
-
-                        style = MaterialTheme.typography.labelLarge,
-
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-
-                    )
-
-                    Slider(state.settings.threshold, viewModel::setThreshold, valueRange = 0.45f..0.60f, modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp))
-
-                }
-
-                Spacer(Modifier.height(12.dp))
-
                 SamsungSettingsSection("Backend") {
 
                     SettingSwitchRow(
@@ -10473,53 +10405,13 @@ private fun SamsungSettingsScreen(
 
             3 -> {
 
-                // Sistem & Geliştirici
-
-                SamsungSettingsSection("Geliştirici") {
-
-                    SettingSwitchRow(Icons.Default.BugReport, "Debug modu", "Pipeline çıktıları ve tanılama", state.settings.debugMode, viewModel::setDebugMode)
-
-                    Spacer(Modifier.height(10.dp))
-
-                    OutlinedTextField(
-
-                        value = state.settings.groqApiKey,
-
-                        onValueChange = viewModel::setGroqApiKey,
-
-                        label = { Text("Groq API anahtarı") },
-
-                        modifier = Modifier.fillMaxWidth(),
-
-                        singleLine = true,
-
-                        shape = RoundedCornerShape(14.dp)
-
-                    )
-
-                    Spacer(Modifier.height(10.dp))
-
-                    Text("OCR motoru", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-
-                    OcrEngineChoice.entries.forEach { choice ->
-
-                        TextButton(onClick = { viewModel.setOcrEngineChoice(choice) }, modifier = Modifier.fillMaxWidth()) {
-
-                            Text(if (state.settings.ocrEngineChoice == choice) "✓ ${choice.name}" else choice.name)
-
-                        }
-
-                    }
-
-                }
-
-                Spacer(Modifier.height(12.dp))
+                // Sistem & Hakkında
 
                 SamsungSettingsSection("Hakkında & Bilgi") {
 
                     SettingActionRow(Icons.Default.Info, "Uygulama bilgisi", "Sürüm ve proje bilgileri", onAbout)
 
-                    SettingInfoRow(Icons.Default.Description, "Sürüm", "0.9.0")
+                    SettingInfoRow(Icons.Default.Description, "Sürüm", "1.0.0")
 
                 }
 
@@ -10590,70 +10482,6 @@ private fun SettingsScreen(state: Board2NotesUiState, viewModel: Board2NotesView
             SettingInfoRow(Icons.Default.Language, "Dil", "Türkçe")
 
             SettingInfoRow(Icons.Default.Notifications, "Bildirimler", "Kapalı")
-
-        }
-
-
-
-        Spacer(Modifier.height(16.dp))
-
-
-
-        SettingsSection(title = "Not Ayarları") {
-
-            SettingInfoRow(Icons.Default.Description, "Varsayılan kayıt biçimi", "Düzenlenebilir not")
-
-            SettingInfoRow(Icons.Default.PictureAsPdf, "PDF dışa aktarma", "Paylaşım seçeneklerinden kullanılabilir")
-
-            SettingSwitchRow(Icons.Default.AutoAwesome, "LLM ile düzenleme", "Not oluşturma tercihleri", state.settings.llmEnabled, viewModel::setLlmEnabled)
-
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-
-                "Model 2 önceliği",
-
-                style = MaterialTheme.typography.titleSmall,
-
-                fontWeight = FontWeight.SemiBold,
-
-                color = MaterialTheme.colorScheme.secondary
-
-            )
-
-            Spacer(Modifier.height(10.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-
-                ModeButton("OCR", state.settings.enhancementMode == EnhancementMode.Ocr, Modifier.weight(1f)) {
-
-                    viewModel.setEnhancementMode(EnhancementMode.Ocr)
-
-                }
-
-                ModeButton("Beyaz sayfa", state.settings.enhancementMode == EnhancementMode.VisualNote, Modifier.weight(1f)) {
-
-                    viewModel.setEnhancementMode(EnhancementMode.VisualNote)
-
-                }
-
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-
-                "Tahta hassasiyeti: ${"%.2f".format(state.settings.threshold)}",
-
-                style = MaterialTheme.typography.titleSmall,
-
-                fontWeight = FontWeight.SemiBold,
-
-                color = MaterialTheme.colorScheme.secondary
-
-            )
-
-            Slider(state.settings.threshold, viewModel::setThreshold, valueRange = 0.45f..0.60f)
 
         }
 
@@ -10745,81 +10573,17 @@ private fun SettingsScreen(state: Board2NotesUiState, viewModel: Board2NotesView
 
 
 
-        Spacer(Modifier.height(16.dp))
-
-
-
-        SettingsSection(title = "Geliştirici ve OCR") {
-
-            SettingSwitchRow(Icons.Default.BugReport, "Debug modu", "Pipeline çıktıları ve tanılama dosyaları", state.settings.debugMode, viewModel::setDebugMode)
-
-            Spacer(Modifier.height(12.dp))
-
-            OutlinedTextField(
-
-                value = state.settings.groqApiKey,
-
-                onValueChange = viewModel::setGroqApiKey,
-
-                label = { Text("Groq API anahtarı") },
-
-                modifier = Modifier.fillMaxWidth(),
-
-                singleLine = true,
-
-                shape = RoundedCornerShape(14.dp)
-
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-
-                "OCR motoru",
-
-                style = MaterialTheme.typography.titleSmall,
-
-                fontWeight = FontWeight.SemiBold,
-
-                color = MaterialTheme.colorScheme.secondary
-
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            OcrEngineChoice.entries.forEach { choice ->
-
-                TextButton(onClick = { viewModel.setOcrEngineChoice(choice) }, modifier = Modifier.fillMaxWidth()) {
-
-                    Text(if (state.settings.ocrEngineChoice == choice) "✓ ${choice.name}" else choice.name)
-
-                }
-
-            }
-
-        }
-
-
-
-        Spacer(Modifier.height(16.dp))
-
-
-
         SettingsSection(title = "Hakkında") {
 
             SettingActionRow(Icons.Default.Info, "Uygulama bilgisi", "Sürüm ve proje bilgileri", onAbout)
 
-            SettingInfoRow(Icons.Default.Description, "Sürüm bilgisi", "0.9.0 ürün sürümü")
+            SettingInfoRow(Icons.Default.Description, "Sürüm bilgisi", "1.0.0 ürün sürümü")
 
             SettingInfoRow(Icons.Default.Folder, "Proje bilgileri", "Board2Note yapay zekâ destekli not uygulaması")
 
         }
 
 
-
-        Spacer(Modifier.height(16.dp))
-
-        WarningText("TrOCR ve PaddleOCR adapterleri ileride bağlanmak üzere ayrıldı; bu sürümde birincil OCR ML Kit Latin kullanır.")
 
         Spacer(Modifier.height(18.dp))
 
@@ -11159,7 +10923,7 @@ private fun AboutScreen() {
 
             Text(
 
-                "Tahta görüntülerini yapay zeka desteğiyle düzenlenebilir ders notlarına dönüştüren premium Android asistanınız.",
+                "Bir nottan fazlası...",
 
                 style = MaterialTheme.typography.bodyMedium,
 
@@ -11174,6 +10938,26 @@ private fun AboutScreen() {
             )
 
             Spacer(Modifier.height(28.dp))
+            Text(
+
+                "Notlarınızı alabileceğiniz, düzenleyebileceğiniz ve beyaz tahta görüntülerini kolayca notlarına ekleyebileceğiniz akıllı not uygulaması.",
+
+                style = MaterialTheme.typography.bodyMedium,
+
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+
+                lineHeight = 22.sp,
+
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+
+                modifier = Modifier.padding(horizontal = 12.dp)
+
+            )
+
+            Spacer(Modifier.height(28.dp))
+
+
+
 
         }
 
@@ -11197,7 +10981,7 @@ private fun AboutScreen() {
 
             Column(Modifier.padding(16.dp)) {
 
-                AboutInfoLine("Sürüm", "0.9.3", Icons.Default.Info)
+                AboutInfoLine("Sürüm", "1.0.0", Icons.Default.Info)
 
                 AboutInfoLine("Gizlilik", "Notlar ve görseller cihazınızın yerel depolama alanında güvenle saklanır.", Icons.Default.Description, showDivider = false)
 

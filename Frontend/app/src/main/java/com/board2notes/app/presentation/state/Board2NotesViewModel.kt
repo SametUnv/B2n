@@ -386,7 +386,7 @@ class Board2NotesViewModel(
             busy(PipelineState.RunningOcr, AppScreen.Enhancement)
             val progressStartedAt = System.currentTimeMillis()
             val progressJob = launch {
-                val ocrStep = if (noteType == NoteType.Text) "OCR metni çıkarılıyor." else "Beyaz sayfa çıktısı hazırlanıyor."
+                val ocrStep = if (noteType == NoteType.Text) "Qwen ile metne çevriliyor." else "Beyaz sayfa çıktısı hazırlanıyor."
                 val steps = listOf(
                     "Onaylanan tahta alanı hazırlanıyor.",
                     "Model 2 görüntüyü iyileştiriyor.",
@@ -412,14 +412,14 @@ class Board2NotesViewModel(
                         bitmap = image,
                         quad = approvedQuad,
                         baseUrl = settings.backendBaseUrl,
-                        runOcr = noteType == NoteType.Text
+                        runOcr = false
                     )
                 } else {
                     container.backendClient.runPipeline(
                         bitmap = image,
                         baseUrl = settings.backendBaseUrl,
                         threshold = settings.threshold,
-                        runOcr = noteType == NoteType.Text
+                        runOcr = false
                     )
                 }
                 val minimumProgressMs = if (noteType == NoteType.Text) 3000L else 2400L
@@ -456,7 +456,7 @@ class Board2NotesViewModel(
                     userMessage = if (saved.noteType == NoteType.Canvas) {
                         "Tahta çıktısı not içine eklendi; konumlandırıp boyutlandırabilirsin."
                     } else {
-                        "OCR metni yazı notuna eklendi."
+                        "Qwen metni yazı notuna eklendi."
                     }
                 )
                 onCompleted?.invoke()
@@ -822,22 +822,21 @@ class Board2NotesViewModel(
             // Not gövdesi değişmez; görsel editörde merkezi/seçili ImageElement olarak eklenir.
             AppliedResult(current, asset, result.jobId)
         } else {
-            val text = result.body.ifBlank { result.ocrText }.trim()
+            val qwenSource = result.whiteCanvasBitmap ?: result.ocrBitmap ?: result.cropBitmap
+                ?: error("Qwen OCR için backend görsel çıktısı bulunamadı.")
+            val text = container.backendClient
+                .ocrImageWithQwen(qwenSource, _uiState.value.settings.backendBaseUrl, result.jobId)
+                .trim()
             val mergedBody = buildString {
                 if (current.body.isNotBlank()) {
                     append(current.body.trimEnd())
                     append("\n\n")
                 }
-                append(text.ifBlank { "OCR sonucu boş döndü." })
-            }
-            val title = if (current.title.startsWith("Yeni ") && result.title.isNotBlank()) {
-                result.title
-            } else {
-                current.title
+                append(text.ifBlank { "Qwen OCR sonucu boş döndü." })
             }
             val updated = container.noteRepository.updateContent(
                 id = noteId,
-                title = title,
+                title = current.title,
                 body = mergedBody,
                 courseName = current.courseName
             ) ?: error("Yazı notu güncellenemedi.")

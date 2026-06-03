@@ -376,15 +376,15 @@ async def explain(req: ExplainRequest) -> ExplainResponse:
         raise HTTPException(status_code=400, detail="Aciklanacak metin bos.")
     resolved_job_id, job_dir = artifact_job(req.source_job_id)
     artifact_urls: dict[str, str] = {
-        "gemma_input_text": artifacts.save_text(resolved_job_id, job_dir, "gemma_input_text", req.text),
+        "gemini_input_text": artifacts.save_text(resolved_job_id, job_dir, "gemini_input_text", req.text),
     }
     try:
         result = await asyncio.to_thread(gemini_service.explain, req.text, req.note_title)
     except Exception as exc:
-        artifact_urls["gemma_error"] = artifacts.save_json(
+        artifact_urls["gemini_error"] = artifacts.save_json(
             resolved_job_id,
             job_dir,
-            "gemma_error",
+            "gemini_error",
             {
                 "job_id": resolved_job_id,
                 "source_job_id": req.source_job_id,
@@ -396,16 +396,16 @@ async def explain(req: ExplainRequest) -> ExplainResponse:
             },
         )
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    artifact_urls["gemma_explanation"] = artifacts.save_text(
+    artifact_urls["gemini_explanation"] = artifacts.save_text(
         resolved_job_id,
         job_dir,
-        "gemma_explanation",
+        "gemini_explanation",
         result.text,
     )
-    artifact_urls["gemma_response"] = artifacts.save_json(
+    artifact_urls["gemini_response"] = artifacts.save_json(
         resolved_job_id,
         job_dir,
-        "gemma_response",
+        "gemini_response",
         {
             "job_id": resolved_job_id,
             "source_job_id": req.source_job_id,

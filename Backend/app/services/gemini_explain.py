@@ -86,8 +86,7 @@ class GeminiExplainService:
 
         model = self.settings.gemini_model
         notes = text if not note_title else f"Not basligi: {note_title}\n\nNot icerigi:\n{text}"
-        # Gemma modelleri system_instruction'i Gemini gibi ayri bir rol olarak islemez ve
-        # talimati cevaba sizdirabilir; bu yuzden talimati ve notlari tek bir kullanici
+        # Talimati ve notlari tek bir kullanici
         # mesajinda birlestiriyoruz (daha kararli ve temiz cikti).
         prompt = (
             f"{SYSTEM_PROMPT}\n\n"
@@ -96,7 +95,10 @@ class GeminiExplainService:
         )
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2048},
+            "generationConfig": {
+                "temperature": 0.3,
+                "maxOutputTokens": self.settings.gemini_max_output_tokens,
+            },
         }
         url = f"{self.settings.gemini_base_url}/models/{model}:generateContent"
         headers = {
@@ -111,7 +113,7 @@ class GeminiExplainService:
         if response.status_code == 404:
             raise RuntimeError(
                 f"Gemma modeli '{model}' bulunamadi (HTTP 404). Model kimligini "
-                f"B2N_GEMINI_MODEL ortam degiskeni ile gecerli bir kimlige (or. 'gemma-3-27b-it') degistirin."
+                f"B2N_GEMINI_MODEL ortam degiskeni ile gecerli bir kimlige (or. 'gemma-4-31b-it') degistirin."
             )
         if response.status_code in (401, 403):
             raise RuntimeError(
@@ -176,7 +178,11 @@ def _extract_text(data: dict) -> tuple[str, str | None]:
         return "", None
     candidate = candidates[0]
     parts = (candidate.get("content") or {}).get("parts") or []
-    text = "".join(part.get("text", "") for part in parts if isinstance(part, dict))
+    text = "".join(
+        part.get("text", "")
+        for part in parts
+        if isinstance(part, dict) and part.get("thought") is not True
+    )
     finish_reason = candidate.get("finishReason")
     warning = None
     if finish_reason and finish_reason not in ("STOP", "MAX_TOKENS"):
