@@ -37,10 +37,12 @@ import androidx.compose.material.icons.filled.PanTool
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Rotate90DegreesCcw
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -193,12 +195,15 @@ fun CanvasEditor(
     recentColors: List<Color>,
     onColorUsed: (Color) -> Unit,
     onAddImage: () -> Unit,
+    onConvertImageToText: (ImageElement) -> Unit = {},
+    convertingAssets: Set<String> = emptySet(),
     pageControlsVisible: Boolean = true,
     onChromeVisibleChange: (Boolean) -> Unit = {},
     isFullscreen: Boolean = false,
     onFullscreenChange: (Boolean) -> Unit = {},
     pendingInsertAsset: String? = null,
     pendingInsertPageIndex: Int? = null,
+    pendingInsertJobId: String? = null,
     onPendingInsertConsumed: () -> Unit = {},
     allowLegacyBackgroundFallback: Boolean = false,
     useDarkTheme: Boolean = false,
@@ -271,7 +276,7 @@ fun CanvasEditor(
     }
 
     // Tahta çıktısı / galeri görseli: merkezi ve seçili olarak yerleştir (canvasSize bilindiğinde).
-    LaunchedEffect(pendingInsertAsset, pendingInsertPageIndex, canvasSize, controller.safePageIndex) {
+    LaunchedEffect(pendingInsertAsset, pendingInsertPageIndex, pendingInsertJobId, canvasSize, controller.safePageIndex) {
         val asset = pendingInsertAsset
         if (asset != null && canvasSize.width > 0 && canvasSize.height > 0) {
             val targetPageIndex = pendingInsertPageIndex?.coerceIn(0, controller.pageCount - 1)
@@ -300,7 +305,14 @@ fun CanvasEditor(
                 val top = (center.y - h / 2f).coerceIn(0f, (PAPER_HEIGHT - h).coerceAtLeast(0f))
                 bitmapCache[asset] = bmp.asImageBitmap()
                 controller.addElement(
-                    ImageElement(asset = asset, left = left, top = top, width = w, height = h),
+                    ImageElement(
+                        asset = asset,
+                        left = left,
+                        top = top,
+                        width = w,
+                        height = h,
+                        backendJobId = pendingInsertJobId
+                    ),
                     select = true
                 )
                 controller.tool = CanvasTool.Select
@@ -699,17 +711,27 @@ fun CanvasEditor(
             val tl = canvasToScreen(Offset(selectedBounds.left, selectedBounds.top), off, sc)
             val br = canvasToScreen(Offset(selectedBounds.right, selectedBounds.bottom), off, sc)
             val canRestoreImage = controller.selectedElements().any { it is ImageElement }
+            val singleImage = controller.selectedElements().filterIsInstance<ImageElement>().singleOrNull()
+            val converting = singleImage != null && singleImage.asset in convertingAssets
             SelectionActionBubble(
                 canRestore = canRestoreImage,
                 canCrop = canRestoreImage,
+                canConvert = singleImage != null,
+                converting = converting,
+                hasOcr = singleImage?.ocrText?.isNotBlank() == true,
                 onDelete = { controller.deleteSelection() },
                 onRestore = { controller.restoreSelectedImagesToOriginalPlacement() },
                 onCrop = { controller.tool = CanvasTool.Select },
                 onRotate = { controller.rotateSelectedImages(90f) },
+                onConvert = { singleImage?.let(onConvertImageToText) },
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .offset {
-                        val bubbleWidth = if (canRestoreImage) 244 else 82
+                        val bubbleWidth = when {
+                            singleImage != null -> 360
+                            canRestoreImage -> 244
+                            else -> 82
+                        }
                         val x = ((tl.x + br.x) / 2f - bubbleWidth / 2f)
                             .roundToInt()
                             .coerceIn(8, (canvasSize.width - bubbleWidth - 8).coerceAtLeast(8))
@@ -932,10 +954,14 @@ private fun DrawScope.drawImageElement(element: ImageElement, bitmap: ImageBitma
 private fun SelectionActionBubble(
     canRestore: Boolean,
     canCrop: Boolean,
+    canConvert: Boolean,
+    converting: Boolean,
+    hasOcr: Boolean,
     onDelete: () -> Unit,
     onRestore: () -> Unit,
     onCrop: () -> Unit,
     onRotate: () -> Unit,
+    onConvert: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -973,6 +999,45 @@ private fun SelectionActionBubble(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.error
                     )
+                }
+            }
+            if (canConvert) {
+                Surface(
+                    modifier = if (converting) Modifier else Modifier.clickable(onClick = onConvert),
+                    shape = RoundedCornerShape(18.dp),
+                    color = if (hasOcr) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        if (converting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(15.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.TextFields,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                        }
+                        Text(
+                            text = when {
+                                converting -> "Çevriliyor..."
+                                hasOcr -> "Metni güncelle"
+                                else -> "Metne çevir"
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
             if (canCrop) {

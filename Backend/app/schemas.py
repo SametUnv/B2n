@@ -65,3 +65,25 @@ class PipelineResponse(BaseModel):
     timings_ms: dict[str, float]
     artifacts: dict[str, str]
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class OcrTextResponse(BaseModel):
+    text: str
+    warnings: list[str] = Field(default_factory=list)
+    elapsed_ms: float = 0.0
+    job_id: str | None = None
+    artifacts: dict[str, str] = Field(default_factory=dict)
+
+
+class ExplainRequest(BaseModel):
+    text: str
+    note_title: str | None = None
+    source_job_id: str | None = None
+
+
+class ExplainResponse(BaseModel):
+    explanation: str
+    warnings: list[str] = Field(default_factory=list)
+    elapsed_ms: float = 0.0
+    job_id: str | None = None
+    artifacts: dict[str, str] = Field(default_factory=dict)

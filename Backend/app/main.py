@@ -1,24 +1,40 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any
 
+import cv2
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from app.config import load_settings, torch_runtime_info
-from app.schemas import BBox, Model1Response, Model2Response, Note, OcrLine, PipelineResponse, Point, Quad
+from app.schemas import (
+    BBox,
+    ExplainRequest,
+    ExplainResponse,
+    Model1Response,
+    Model2Response,
+    Note,
+    OcrLine,
+    OcrTextResponse,
+    PipelineResponse,
+    Point,
+    Quad,
+)
 from app.services.artifacts import ArtifactStore
 from app.services.image_io import read_upload_rgb
 from app.services.geometry import draw_quad, inset_quad, order_points, warp_perspective
+from app.services.gemini_explain import GeminiExplainService
 from app.services.model1_segmentation import Model1Result, Model1SegmentationService
 from app.services.model2_enhancement import Model2EnhancementService, Model2Result
 from app.services.notes import FormattedNote, RuleBasedNoteFormatter
 from app.services.ocr import OcrResult as InternalOcrResult
 from app.services.ocr import PaddleOcrService
+from app.services.qwen_ocr import QwenVisionOcrService
 
 settings = load_settings()
 artifacts = ArtifactStore(settings.outputs_dir)
@@ -26,6 +42,8 @@ model1_service = Model1SegmentationService(settings)
 model2_service = Model2EnhancementService(settings)
 ocr_service = PaddleOcrService(settings)
 note_formatter = RuleBasedNoteFormatter()
+qwen_ocr_service = QwenVisionOcrService(settings)
+gemini_service = GeminiExplainService(settings)
 
 app = FastAPI(title="Board2Notes Backend", version="1.0.0")
 app.add_middleware(
@@ -63,6 +81,8 @@ def models() -> dict[str, Any]:
             model1_service.metadata(),
             model2_service.metadata(),
             {"id": "ocr", "engine": "PaddleOCR", "lang": settings.ocr_lang, "lazy_loaded": True},
+            qwen_ocr_service.metadata(),
+            gemini_service.metadata(),
         ],
         "postprocess": {
             "board_content_margin_ratio": settings.board_content_margin_ratio,
@@ -310,6 +330,121 @@ def get_artifact(job_id: str, artifact_name: str) -> FileResponse:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Artifact not found.") from exc
     return FileResponse(path, media_type=media_type, filename=path.name)
+
+
+@app.post("/api/v1/ocr/qwen", response_model=OcrTextResponse)
+async def ocr_qwen(image: UploadFile = File(...), job_id: str | None = Form(None)) -> OcrTextResponse:
+    data = await image.read()
+    mime = image.content_type or "image/jpeg"
+    resolved_job_id, job_dir = artifact_job(job_id)
+    artifact_urls: dict[str, str] = {}
+    image_rgb = decode_image_bytes_rgb(data)
+    artifact_urls["qwen_input"] = artifacts.save_image(resolved_job_id, job_dir, "qwen_input", image_rgb)
+    result = await asyncio.to_thread(qwen_ocr_service.recognize_bytes, data, mime)
+    artifact_urls["qwen_ocr_text"] = artifacts.save_text(resolved_job_id, job_dir, "qwen_ocr_text", result.text)
+    artifact_urls["qwen_ocr_response"] = artifacts.save_json(
+        resolved_job_id,
+        job_dir,
+        "qwen_ocr_response",
+        {
+            "job_id": resolved_job_id,
+            "source": {
+                "filename": image.filename,
+                "mime": mime,
+                "bytes": len(data),
+                "linked_pipeline_job": bool(job_id),
+            },
+            "service": qwen_ocr_service.metadata(),
+            "text": result.text,
+            "warnings": result.warnings,
+            "elapsed_ms": result.elapsed_ms,
+            "artifacts": artifact_urls,
+        },
+    )
+    return OcrTextResponse(
+        text=result.text,
+        warnings=result.warnings,
+        elapsed_ms=result.elapsed_ms,
+        job_id=resolved_job_id,
+        artifacts=artifact_urls,
+    )
+
+
+@app.post("/api/v1/explain", response_model=ExplainResponse)
+async def explain(req: ExplainRequest) -> ExplainResponse:
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="Aciklanacak metin bos.")
+    resolved_job_id, job_dir = artifact_job(req.source_job_id)
+    artifact_urls: dict[str, str] = {
+        "gemma_input_text": artifacts.save_text(resolved_job_id, job_dir, "gemma_input_text", req.text),
+    }
+    try:
+        result = await asyncio.to_thread(gemini_service.explain, req.text, req.note_title)
+    except Exception as exc:
+        artifact_urls["gemma_error"] = artifacts.save_json(
+            resolved_job_id,
+            job_dir,
+            "gemma_error",
+            {
+                "job_id": resolved_job_id,
+                "source_job_id": req.source_job_id,
+                "note_title": req.note_title,
+                "service": gemini_service.metadata(),
+                "input_text": req.text,
+                "error": str(exc),
+                "artifacts": artifact_urls,
+            },
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    artifact_urls["gemma_explanation"] = artifacts.save_text(
+        resolved_job_id,
+        job_dir,
+        "gemma_explanation",
+        result.text,
+    )
+    artifact_urls["gemma_response"] = artifacts.save_json(
+        resolved_job_id,
+        job_dir,
+        "gemma_response",
+        {
+            "job_id": resolved_job_id,
+            "source_job_id": req.source_job_id,
+            "note_title": req.note_title,
+            "service": gemini_service.metadata(),
+            "input_text": req.text,
+            "explanation": result.text,
+            "warnings": result.warnings,
+            "elapsed_ms": result.elapsed_ms,
+            "artifacts": artifact_urls,
+        },
+    )
+    return ExplainResponse(
+        explanation=result.text,
+        warnings=result.warnings,
+        elapsed_ms=result.elapsed_ms,
+        job_id=resolved_job_id,
+        artifacts=artifact_urls,
+    )
+
+
+def artifact_job(job_id: str | None) -> tuple[str, Any]:
+    cleaned = (job_id or "").strip()
+    if not cleaned:
+        return artifacts.create_job()
+    try:
+        return artifacts.get_or_create_job(cleaned)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=400, detail="Gecersiz artifact job_id.") from exc
+
+
+def decode_image_bytes_rgb(data: bytes) -> np.ndarray:
+    if not data:
+        raise HTTPException(status_code=400, detail="Yuklenen gorsel bos.")
+    buffer = np.frombuffer(data, dtype=np.uint8)
+    bgr = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+    if bgr is None:
+        raise HTTPException(status_code=400, detail="Yuklenen dosya gorsel olarak okunamadi.")
+    return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
 
 def save_model1_artifacts(job_id: str, job_dir, result: Model1Result) -> dict[str, str]:

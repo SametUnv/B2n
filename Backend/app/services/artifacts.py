@@ -22,6 +22,16 @@ class ArtifactStore:
         job_dir.mkdir(parents=True, exist_ok=False)
         return job_id, job_dir
 
+    def get_or_create_job(self, job_id: str) -> tuple[str, Path]:
+        if not re.fullmatch(r"[A-Za-z0-9_\-.]+", job_id):
+            raise FileNotFoundError(job_id)
+        job_dir = (self.root / job_id).resolve()
+        root = self.root.resolve()
+        if root not in job_dir.parents and job_dir != root:
+            raise FileNotFoundError(job_id)
+        job_dir.mkdir(parents=True, exist_ok=True)
+        return job_id, job_dir
+
     def url(self, job_id: str, file_name: str) -> str:
         return f"/api/v1/artifacts/{job_id}/{file_name}"
 

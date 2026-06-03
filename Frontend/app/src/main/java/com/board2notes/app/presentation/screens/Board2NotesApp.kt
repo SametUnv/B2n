@@ -355,6 +355,10 @@ import com.board2notes.app.presentation.canvas.CanvasEditor
 
 import com.board2notes.app.presentation.canvas.CanvasInputSettings
 
+import com.board2notes.app.presentation.canvas.NoteAiAssistant
+
+import com.board2notes.app.presentation.canvas.NoteAiState
+
 import kotlinx.coroutines.Dispatchers
 
 import kotlinx.coroutines.withContext
@@ -7740,6 +7744,7 @@ private fun SamsungStyleNoteEditorScreen(
 
     var pendingInsert by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf<String?>(null) }
     var pendingInsertPageIndex by remember(note.createdAtEpochMs, state.activeSavedNoteId) { mutableStateOf<Int?>(null) }
+    var convertingAssets by remember(state.activeSavedNoteId) { mutableStateOf(emptySet<String>()) }
 
     var recentColors by remember { mutableStateOf(listOf(Color.Black, Color(0xFF2563EB), Color(0xFFEF4444), Color(0xFF10B981))) }
 
@@ -7760,6 +7765,12 @@ private fun SamsungStyleNoteEditorScreen(
     var canvasChromeVisible by remember(state.activeSavedNoteId) { mutableStateOf(true) }
 
     var canvasFullscreen by remember(state.activeSavedNoteId) { mutableStateOf(false) }
+
+    var aiState by remember(state.activeSavedNoteId) { mutableStateOf<NoteAiState>(NoteAiState.Idle) }
+
+    var aiPopupOpen by remember(state.activeSavedNoteId) { mutableStateOf(false) }
+
+    var aiLastExplainedText by remember(state.activeSavedNoteId) { mutableStateOf<String?>(null) }
 
 
 
@@ -7862,17 +7873,33 @@ private fun SamsungStyleNoteEditorScreen(
         )
     }
 
+    fun runAiExplanation(combinedText: String) {
+        aiState = NoteAiState.Loading
+        aiPopupOpen = true
+        scope.launch {
+            runCatching { viewModel.explainCurrentNote(combinedText, title) }
+                .onSuccess {
+                    aiState = NoteAiState.Success(it)
+                    aiLastExplainedText = combinedText
+                }
+                .onFailure {
+                    aiState = NoteAiState.Error(it.message ?: "Açıklama alınamadı.")
+                }
+        }
+    }
+
     BackHandler(onBack = ::saveAndExit)
 
-    Column(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
 
-        modifier = Modifier
+            modifier = Modifier
 
-            .fillMaxSize()
+                .fillMaxSize()
 
-            .background(MaterialTheme.colorScheme.background)
+                .background(MaterialTheme.colorScheme.background)
 
-    ) {
+        ) {
 
         AnimatedVisibility(
             visible = noteType != NoteType.Canvas || (!canvasFullscreen && canvasChromeVisible),
@@ -8242,9 +8269,41 @@ private fun SamsungStyleNoteEditorScreen(
 
                 pendingInsertPageIndex = pendingInsertPageIndex,
 
+                pendingInsertJobId = state.pendingCanvasImageJobId,
+
                 onPendingInsertConsumed = {
                     pendingInsert = null
                     pendingInsertPageIndex = null
+                },
+
+                convertingAssets = convertingAssets,
+
+                onConvertImageToText = { imageElement ->
+                    val noteId = state.activeSavedNoteId.orEmpty()
+                    if (noteId.isNotBlank()) {
+                        val file = CanvasAssets.imageFile(context.filesDir, noteId, imageElement.asset)
+                        convertingAssets = convertingAssets + imageElement.asset
+                        scope.launch {
+                            runCatching {
+                                val bmp = withContext(Dispatchers.IO) {
+                                    if (file.exists()) android.graphics.BitmapFactory.decodeFile(file.absolutePath) else null
+                                }
+                                if (bmp != null) {
+                                    val text = viewModel.ocrImageToText(bmp, imageElement.backendJobId)
+                                    controller.setImageOcrText(imageElement.id, text)
+                                } else {
+                                    throw IllegalStateException("Görsel dosyası yüklenemedi.")
+                                }
+                            }.onFailure { err ->
+                                android.widget.Toast.makeText(
+                                    context,
+                                    "Metne çevirme hatası: ${err.message}",
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                            convertingAssets = convertingAssets - imageElement.asset
+                        }
+                    }
                 },
 
                 allowLegacyBackgroundFallback = allowLegacyBackgroundFallback,
@@ -8261,6 +8320,37 @@ private fun SamsungStyleNoteEditorScreen(
 
         }
 
+    }
+
+        if (noteType == NoteType.Canvas) {
+            NoteAiAssistant(
+                state = aiState,
+                popupOpen = aiPopupOpen,
+                onTogglePopup = {
+                    if (aiState is NoteAiState.Loading) {
+                        aiPopupOpen = !aiPopupOpen
+                    } else {
+                        val combined = controller.imagesOcrCombined()
+                        if (combined.isBlank()) {
+                            aiState = NoteAiState.Error("Bu notta metne çevrilmiş görsel yok. Önce görselleri 'Metne çevir' ile dönüştürün.")
+                            aiPopupOpen = true
+                        } else if (combined == aiLastExplainedText && (aiState is NoteAiState.Success || aiState is NoteAiState.Error)) {
+                            aiPopupOpen = !aiPopupOpen
+                        } else {
+                            runAiExplanation(combined)
+                        }
+                    }
+                },
+                onDismiss = { aiPopupOpen = false },
+                onRegenerate = {
+                    val combined = controller.imagesOcrCombined()
+                    if (combined.isNotBlank()) {
+                        runAiExplanation(combined)
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 
 

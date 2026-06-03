@@ -78,6 +78,33 @@ class BackendBoard2NotesClient {
         parsePipelineResult(root, response)
     }
 
+    /** Tek bir görseli backend üzerinden Qwen 2.5 VL'a OCR yaptırır ("metne çevir"). */
+    suspend fun ocrImageWithQwen(
+        bitmap: Bitmap,
+        baseUrl: String,
+        jobId: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        val root = normalizeBaseUrl(baseUrl)
+        val fields = jobId?.takeIf { it.isNotBlank() }?.let { listOf("job_id" to it) }.orEmpty()
+        val response = postMultipart(root, "/api/v1/ocr/qwen", bitmap, fields)
+        response.optString("text")
+    }
+
+    /** Birleştirilmiş OCR metnini backend üzerinden Gemma'ya gönderip açıklama alır. */
+    suspend fun explainNote(
+        text: String,
+        baseUrl: String,
+        noteTitle: String? = null
+    ): String = withContext(Dispatchers.IO) {
+        val root = normalizeBaseUrl(baseUrl)
+        val payload = JSONObject().apply {
+            put("text", text)
+            if (!noteTitle.isNullOrBlank()) put("note_title", noteTitle)
+        }
+        val response = postJson(root, "/api/v1/explain", payload)
+        response.optString("explanation")
+    }
+
     internal fun normalizeBaseUrl(baseUrl: String): String {
         val root = baseUrl.trim().trimEnd('/')
         require(root.startsWith("http://") || root.startsWith("https://")) {
@@ -152,6 +179,35 @@ class BackendBoard2NotesClient {
         connection.disconnect()
         if (status !in 200..299) {
             throw IllegalStateException("Backend pipeline HTTP $status: $body")
+        }
+        return JSONObject(body)
+    }
+
+    /** JSON gövdeli POST; [postMultipart] ile aynı bağlantı/hata kalıbını izler. */
+    private fun postJson(root: String, path: String, payload: JSONObject): JSONObject {
+        val connection = (URL("$root$path").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 10_000
+            readTimeout = 120_000
+            doOutput = true
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        }
+        connection.outputStream.buffered().use { output ->
+            output.write(payload.toString().toByteArray(Charsets.UTF_8))
+        }
+        val status = connection.responseCode
+        val body = if (status in 200..299) {
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } else {
+            connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+        }
+        connection.disconnect()
+        if (status !in 200..299) {
+            // Backend hata gövdesi FastAPI {"detail": "..."} biçiminde gelir; varsa onu yüzeye çıkar.
+            val detail = runCatching { JSONObject(body).optString("detail") }.getOrNull()
+            val message = if (!detail.isNullOrBlank()) detail else body
+            throw IllegalStateException(message.ifBlank { "Backend HTTP $status" })
         }
         return JSONObject(body)
     }

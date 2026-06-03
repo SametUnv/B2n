@@ -315,6 +315,26 @@ class CanvasController(
         selection = selectedImageIds
     }
 
+    /**
+     * Bir görsele OCR ("metne çevir") sonucunu iliştirir. Görünür bir dönüşüm olmadığı için
+     * undo yığınını kirletmez; ancak [onChange] ile kalıcılaştırılır (canvas JSON'una yazılır).
+     */
+    fun setImageOcrText(id: String, ocrText: String) {
+        val page = currentPage()
+        if (page.none { it is ImageElement && it.id == id }) return
+        replaceCurrentPageNoUndo(page.map { element ->
+            if (element is ImageElement && element.id == id) element.copy(ocrText = ocrText) else element
+        })
+        onChange(pages)
+    }
+
+    /** AI açıklama için: nottaki TÜM sayfalarda OCR'lanmış görsel metinlerini birleştirir. */
+    fun imagesOcrCombined(): String =
+        pages.flatten()
+            .filterIsInstance<ImageElement>()
+            .mapNotNull { it.ocrText.takeIf { text -> text.isNotBlank() } }
+            .joinToString("\n\n---\n\n")
+
     // --- Undo / Redo ---
 
     fun undo() {

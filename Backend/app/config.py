@@ -27,6 +27,20 @@ class Settings:
     perspective_max_output_side: int = 2400
     board_content_margin_ratio: float = 0.025
     ocr_lang: str = "tr"
+    # --- LM Studio (Qwen 2.5 VL) OCR ---
+    lmstudio_base_url: str = "http://127.0.0.1:1234/v1"
+    lmstudio_ocr_model: str = "qwen2.5-vl-3b-instruct"
+    lmstudio_timeout_s: float = 120.0
+    # Gorsel detayini korumak icin yuksek tutulur; yalnizca en uzun kenar bunu asarsa
+    # kuculturuz. Model baglam tasarsa (HTTP 400) servis otomatik olarak kademeli daha
+    # kucuk cozunurlukle tekrar dener. B2N_LMSTUDIO_IMAGE_MAX_SIDE ile ayarlanir.
+    lmstudio_image_max_side: int = 2048
+    lmstudio_max_tokens: int = 4096
+    # --- Google Generative Language API (Gemma) "anlat" ---
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    gemini_model: str = "gemma-4-31b-it"
+    gemini_api_key: str = "AQ.Ab8RN6I6GPqLuLtfcAuiKjYjKS7E7hA73se5lsWoKaIK-yVt9w"
+    gemini_timeout_s: float = 90.0
 
 
 def load_settings() -> Settings:
@@ -67,6 +81,15 @@ def load_settings() -> Settings:
         model2_ink_darkness=float(os.getenv("B2N_INK_DARKNESS", "0.55")),
         board_content_margin_ratio=float(os.getenv("B2N_BOARD_CONTENT_MARGIN_RATIO", "0.025")),
         ocr_lang=os.getenv("B2N_OCR_LANG", "tr"),
+        lmstudio_base_url=os.getenv("B2N_LMSTUDIO_URL", "http://127.0.0.1:1234/v1").strip().rstrip("/"),
+        lmstudio_ocr_model=os.getenv("B2N_LMSTUDIO_OCR_MODEL", "qwen2.5-vl-3b-instruct"),
+        lmstudio_timeout_s=float(os.getenv("B2N_LMSTUDIO_TIMEOUT_S", "120")),
+        lmstudio_image_max_side=int(os.getenv("B2N_LMSTUDIO_IMAGE_MAX_SIDE", "2048")),
+        lmstudio_max_tokens=int(os.getenv("B2N_LMSTUDIO_MAX_TOKENS", "4096")),
+        gemini_base_url=os.getenv("B2N_GEMINI_URL", "https://generativelanguage.googleapis.com/v1beta").strip().rstrip("/"),
+        gemini_model=os.getenv("B2N_GEMINI_MODEL", "gemma-4-31b-it"),
+        gemini_api_key=os.getenv("B2N_GEMINI_API_KEY", "AQ.Ab8RN6I6GPqLuLtfcAuiKjYjKS7E7hA73se5lsWoKaIK-yVt9w"),
+        gemini_timeout_s=float(os.getenv("B2N_GEMINI_TIMEOUT_S", "90")),
     )
 
 

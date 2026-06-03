@@ -56,7 +56,10 @@ data class ImageElement(
     val initialLeft: Float = left,
     val initialTop: Float = top,
     val initialWidth: Float = width,
-    val initialHeight: Float = height
+    val initialHeight: Float = height,
+    /** Görselin Qwen 2.5 VL ile OCR'lanmış metni; "metne çevir" ile doldurulur ve canvas JSON'una gömülür. */
+    val ocrText: String = "",
+    val backendJobId: String? = null
 ) : CanvasElement {
     val rect: Rect get() = Rect(left, top, left + width, top + height)
     val center: Offset get() = Offset(left + width / 2f, top + height / 2f)
@@ -236,6 +239,8 @@ object CanvasDocumentCodec {
             put("oy", round1(element.initialTop))
             put("ow", round1(element.initialWidth))
             put("oh", round1(element.initialHeight))
+            if (element.ocrText.isNotBlank()) put("ocr", element.ocrText)
+            if (!element.backendJobId.isNullOrBlank()) put("job", element.backendJobId)
         }
     }
 
@@ -282,7 +287,9 @@ object CanvasDocumentCodec {
                     initialLeft = json.optDouble("ox", json.optDouble("x", 0.0)).toFloat(),
                     initialTop = json.optDouble("oy", json.optDouble("y", 0.0)).toFloat(),
                     initialWidth = json.optDouble("ow", json.optDouble("w", 1.0)).toFloat().coerceAtLeast(1f),
-                    initialHeight = json.optDouble("oh", json.optDouble("h", 1.0)).toFloat().coerceAtLeast(1f)
+                    initialHeight = json.optDouble("oh", json.optDouble("h", 1.0)).toFloat().coerceAtLeast(1f),
+                    ocrText = json.optString("ocr", ""),
+                    backendJobId = json.optString("job").takeIf { it.isNotBlank() }
                 )
             }
             else -> null

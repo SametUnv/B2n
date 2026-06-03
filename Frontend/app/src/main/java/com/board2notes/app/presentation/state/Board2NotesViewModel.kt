@@ -35,7 +35,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-private data class AppliedResult(val note: SavedNote, val canvasInsertAsset: String?)
+private data class AppliedResult(
+    val note: SavedNote,
+    val canvasInsertAsset: String?,
+    val canvasInsertJobId: String? = null
+)
 
 class Board2NotesViewModel(
     application: Application,
@@ -437,6 +441,7 @@ class Board2NotesViewModel(
                     manualQuad = null,
                     pendingCanvasImageAsset = applied.canvasInsertAsset,
                     pendingCanvasImagePageIndex = applied.canvasInsertAsset?.let { pageIndex },
+                    pendingCanvasImageJobId = applied.canvasInsertJobId,
                     screen = AppScreen.Note,
                     isBusy = false,
                     loadingMessage = null,
@@ -776,6 +781,14 @@ class Board2NotesViewModel(
         _uiState.value = _uiState.value.copy(userMessage = null)
     }
 
+    /** Görseli backend (Qwen 2.5 VL) ile OCR'lar; sonucu döndürür. Hata fırlatabilir. */
+    suspend fun ocrImageToText(bitmap: Bitmap, backendJobId: String? = null): String =
+        container.backendClient.ocrImageWithQwen(bitmap, _uiState.value.settings.backendBaseUrl, backendJobId)
+
+    /** Birleştirilmiş OCR metnini backend (Gemma) ile açıklatır; metni döndürür. Hata fırlatabilir. */
+    suspend fun explainCurrentNote(text: String, title: String?): String =
+        container.backendClient.explainNote(text, _uiState.value.settings.backendBaseUrl, title)
+
     private fun buildDebugArtifacts(rawText: String, note: FormattedNote?) =
         buildList {
             _uiState.value.boardDetection?.debugArtifacts?.let { addAll(it) }
@@ -799,7 +812,7 @@ class Board2NotesViewModel(
             val asset = "img_${UUID.randomUUID()}.png"
             withContext(Dispatchers.IO) { writeBitmapAsset(noteId, asset, darkened) }
             // Not gövdesi değişmez; görsel editörde merkezi/seçili ImageElement olarak eklenir.
-            AppliedResult(current, asset)
+            AppliedResult(current, asset, result.jobId)
         } else {
             val text = result.body.ifBlank { result.ocrText }.trim()
             val mergedBody = buildString {
@@ -830,10 +843,15 @@ class Board2NotesViewModel(
     }
 
     fun clearPendingCanvasImage() {
-        if (_uiState.value.pendingCanvasImageAsset != null || _uiState.value.pendingCanvasImagePageIndex != null) {
+        if (
+            _uiState.value.pendingCanvasImageAsset != null ||
+            _uiState.value.pendingCanvasImagePageIndex != null ||
+            _uiState.value.pendingCanvasImageJobId != null
+        ) {
             _uiState.value = _uiState.value.copy(
                 pendingCanvasImageAsset = null,
-                pendingCanvasImagePageIndex = null
+                pendingCanvasImagePageIndex = null,
+                pendingCanvasImageJobId = null
             )
         }
     }
